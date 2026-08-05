@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: StudyAI — Discord bot gap-report system on Lambda + CockroachDB + Bedrock
+
+Parameters:
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: CockroachDB connection string (postgresql://...)
+  DiscordBotToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+  DiscordPublicKey:
+    Type: String
+    Default: ''
+  DiscordApplicationId:
+    Type: String
+    Default: ''
+  DiscordGuildId:
+    Type: String
+    Default: ''
+  QuestionsChannelIds:
+    Type: String
+    Default: ''
+    Description: Comma-separated Discord channel IDs to watch
+  ReportChannelId:
+    Type: String
+    Default: ''
+  BedrockEmbeddingModel:
+    Type: String
+    Default: amazon.titan-embed-text-v1
+  BedrockChatModel:
+    Type: String
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+  SimilarityThreshold:
+    Type: String
+    Default: '0.3'
+  WeeklyReportSchedule:
+    Type: String
+    Default: cron(0 17 ? * FRI *)
+    Description: EventBridge schedule (UTC) for weekly gap report
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 512
+    Architectures:
+      - x86_64
+    CodeUri: src/
+    Environment:
+      Variables:
+        DATABASE_URL: !Ref DatabaseUrl
+        DISCORD_BOT_TOKEN: !Ref DiscordBotToken
+        DISCORD_PUBLIC_KEY: !Ref DiscordPublicKey
+        DISCORD_APPLICATION_ID: !Ref DiscordApplicationId
+        DISCORD_GUILD_ID: !Ref DiscordGuildId
+        QUESTIONS_CHANNEL_IDS: !Ref QuestionsChannelIds
+        REPORT_CHANNEL_ID: !Ref ReportChannelId
+        BEDROCK_EMBEDDING_MODEL: !Ref BedrockEmbeddingModel
+        BEDROCK_CHAT_MODEL: !Ref BedrockChatModel
+        SIMILARITY_THRESHOLD: !Ref SimilarityThreshold
+    Policies:
+      - Statement:
+          - Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+            Resource: '*'
+
+Resources:
+  IngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: studyai-ingestion
+      Handler: ingestion.handler.handler
+      Description: Capture Discord questions, embed via Bedrock, store in CockroachDB
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /ingestion
+            Method: POST
+
+  ResolutionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: studyai-resolution
+      Handler: resolution.handler.handler
+      Description: Discord interactions — /resolved, /ask, /gap-report, ✅ reactions
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /interactions
+            Method: POST
+
+  GapReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: studyai-gap-report
+      Handler: gap_report.handler.handler
+      Timeout: 60
+      Description: Weekly syllabus gap report posted to Discord
+      Events:
+        WeeklySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref WeeklyReportSchedule
+            Description: Weekly StudyAI gap report
+            Enabled: true
+
+Outputs:
+  IngestionUrl:
+    Description: POST Discord MESSAGE_CREATE payloads here (from gateway relay)
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/ingestion'
+  InteractionsUrl:
+    Description: Set as Discord Interactions Endpoint URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/interactions'
+  GapReportFunctionArn:
+    Description: ARN of the weekly gap report Lambda
+    Value: !GetAtt GapReportFunction.Arn
