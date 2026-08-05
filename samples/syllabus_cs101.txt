@@ -1,0 +1,30 @@
+CS 101 — Introduction to Computer Science
+Instructor: Ada Lovelace
+
+Week 1–2: Programming Fundamentals
+Variables, types, control flow, functions, and basic I/O.
+
+Week 3: Data Structures I
+Arrays, linked lists, stacks, and queues. Time/space tradeoffs.
+
+Week 4: Data Structures II
+Hash tables, trees, and binary search trees. Traversal algorithms.
+
+Week 5: Algorithms — Searching and Sorting
+Linear search, binary search, selection/insertion/merge/quick sort.
+Big-O analysis and best/worst/average cases.
+
+Week 6: Recursion
+Base cases, recursive vs iterative solutions, call stacks, tree recursion.
+
+Week 7: Object-Oriented Programming
+Classes, objects, encapsulation, inheritance, polymorphism.
+
+Week 8: Complexity and Correctness
+Asymptotic notation, loop invariants, informal proofs of correctness.
+
+Week 9: Graphs (Intro)
+Graph representations (adjacency list/matrix), BFS, DFS.
+
+Week 10: Exam Review
+Cumulative review of all prior topics with practice problems.
