@@ -1,0 +1,24 @@
+{
+  "type": 2,
+  "id": "interaction-id",
+  "guild_id": "123456789012345678",
+  "channel_id": "987654321098765432",
+  "member": {
+    "user": {
+      "id": "555666777888999000"
+    }
+  },
+  "data": {
+    "name": "resolved",
+    "options": [
+      {
+        "name": "message_id",
+        "value": "111222333444555666"
+      },
+      {
+        "name": "note",
+        "value": "Covered in office hours"
+      }
+    ]
+  }
+}
