@@ -80,7 +80,7 @@ def register_guild_commands(
         },
         {
             "name": "ask",
-            "description": "Capture a study question into StudyAI",
+            "description": "Capture a study question into StudyAI memory",
             "options": [
                 {
                     "name": "question",
@@ -92,7 +92,11 @@ def register_guild_commands(
         },
         {
             "name": "gap-report",
-            "description": "Post the current syllabus gap report now",
+            "description": "Post the syllabus gap report with TA recommendations",
+        },
+        {
+            "name": "memory",
+            "description": "Ask the Classroom Memory Agent for a live TA digest",
         },
     ]
     response = requests.put(
@@ -113,6 +117,7 @@ def build_gap_report_embed(
     course_name: str,
     untouched: list[dict[str, Any]],
     unresolved: list[dict[str, Any]],
+    recommendation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     untouched_lines = (
         "\n".join(f"• {row['topic_name']}" for row in untouched[:15])
@@ -125,24 +130,41 @@ def build_gap_report_embed(
         )
         or "_None — no open-question clusters._"
     )
+    fields: list[dict[str, Any]] = [
+        {
+            "name": f"Untouched topics ({len(untouched)})",
+            "value": untouched_lines[:1024],
+            "inline": False,
+        },
+        {
+            "name": f"Unresolved areas ({len(unresolved)})",
+            "value": unresolved_lines[:1024],
+            "inline": False,
+        },
+    ]
+    if recommendation:
+        priority = recommendation.get("priority_topics") or []
+        priority_lines = (
+            "\n".join(f"• {name}" for name in priority[:5]) or "_No priority topics._"
+        )
+        risk = recommendation.get("exam_risk", "unknown")
+        focus = str(recommendation.get("office_hours_focus") or "")[:500]
+        fields.append(
+            {
+                "name": f"Agent TA plan (exam risk: {risk})",
+                "value": f"{priority_lines}\n\n{focus}"[:1024],
+                "inline": False,
+            }
+        )
     return {
         "title": f"Weekly Gap Report · {course_name}",
         "description": (
-            "Collective blind spots before exams — topics with no questions, "
-            "and topics with many still-open questions."
+            "Classroom Memory Agent — CockroachDB VECTOR coverage plus Bedrock "
+            "recommendations for what TAs should teach next."
         ),
         "color": 0x1F6FEB,
-        "fields": [
-            {
-                "name": f"Untouched topics ({len(untouched)})",
-                "value": untouched_lines[:1024],
-                "inline": False,
-            },
-            {
-                "name": f"Unresolved areas ({len(unresolved)})",
-                "value": unresolved_lines[:1024],
-                "inline": False,
-            },
-        ],
-        "footer": {"text": "StudyAI · semantic match via CockroachDB VECTOR"},
+        "fields": fields,
+        "footer": {
+            "text": "StudyAI · CockroachDB VECTOR memory + Amazon Bedrock"
+        },
     }

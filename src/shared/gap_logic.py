@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from shared.agent import generate_and_store_recommendations
 from shared.config import get_settings
 from shared.db import fetch_topic_coverage, get_active_course_for_guild, get_conn
 from shared.discord_api import build_gap_report_embed, post_channel_message
+
+logger = logging.getLogger(__name__)
 
 
 def classify_gaps(
@@ -15,11 +19,7 @@ def classify_gaps(
     open_threshold: int = 2,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     untouched = [r for r in rows if int(r["question_count"]) == 0]
-    unresolved = [
-        r
-        for r in rows
-        if int(r["open_count"]) >= open_threshold
-    ]
+    unresolved = [r for r in rows if int(r["open_count"]) >= open_threshold]
     unresolved.sort(key=lambda r: int(r["open_count"]), reverse=True)
     return untouched, unresolved
 
@@ -46,12 +46,24 @@ def build_and_post_gap_report(
             course["id"],
             threshold=settings.similarity_threshold,
         )
+        untouched, unresolved = classify_gaps(rows)
+        try:
+            recommendation = generate_and_store_recommendations(
+                conn,
+                course_id=course["id"],
+                course_name=course["course_name"],
+                untouched=untouched,
+                unresolved=unresolved,
+            )
+        except Exception:
+            logger.exception("TA recommendation generation failed; posting coverage only")
+            recommendation = None
 
-    untouched, unresolved = classify_gaps(rows)
     embed = build_gap_report_embed(
         course_name=course["course_name"],
         untouched=untouched,
         unresolved=unresolved,
+        recommendation=recommendation,
     )
     post_channel_message(
         settings.discord_bot_token,
@@ -62,9 +74,15 @@ def build_and_post_gap_report(
         "ok": True,
         "message": (
             f"Posted gap report for **{course['course_name']}**: "
-            f"{len(untouched)} untouched, {len(unresolved)} unresolved areas."
+            f"{len(untouched)} untouched, {len(unresolved)} unresolved areas"
+            + (
+                f", exam risk **{recommendation.get('exam_risk')}**."
+                if recommendation
+                else "."
+            )
         ),
         "untouched": len(untouched),
         "unresolved": len(unresolved),
         "course_id": str(course["id"]),
+        "recommendation": recommendation,
     }

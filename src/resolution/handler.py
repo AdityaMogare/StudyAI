@@ -1,4 +1,4 @@
-"""Resolution Lambda: Discord interactions (/resolved, ✅) → update CockroachDB."""
+"""Resolution Lambda: Discord interactions → CockroachDB agent memory."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import json
 import logging
 from typing import Any
 
+from shared.agent import format_memory_digest, link_question_to_topics
 from shared.bedrock import embed_text, is_likely_question
 from shared.config import get_settings
 from shared.db import (
     get_active_course_for_guild,
     get_conn,
+    insert_agent_action,
     insert_question,
     resolve_question_by_message_id,
 )
@@ -52,7 +54,6 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         if not ok:
             return _response(401, {"error": "invalid_signature"})
 
-    # Discord URL verification
     if body.get("type") == PING:
         return _response(200, {"type": 1})
 
@@ -62,12 +63,13 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             return _handle_command(body)
         if interaction_type == MESSAGE_COMPONENT:
             return _handle_component(body)
-        # Reaction-forwarded custom payload from gateway relay
         if body.get("event") == "reaction_add":
             return _handle_reaction_payload(body)
     except Exception:
         logger.exception("Resolution handler failed")
-        return _discord_message("Something went wrong updating that question.")
+        return _discord_message(
+            "StudyAI hit an error updating memory. Please try again in a moment."
+        )
 
     return _discord_message("Unsupported interaction.")
 
@@ -91,23 +93,38 @@ def _handle_command(body: dict[str, Any]) -> dict[str, Any]:
                 responder_id=user_id,
                 answer_text=note,
             )
+            if question:
+                insert_agent_action(
+                    conn,
+                    course_id=question["course_id"],
+                    action_type="resolve",
+                    input_ref=str(question["id"]),
+                    output_summary=f"Resolved via /resolved by {user_id}",
+                    payload={"note": note, "message_id": message_id},
+                )
         if not question:
-            return _discord_message(f"No open question found for message `{message_id}`.")
-        return _discord_message(f"Marked as resolved: _{question['question_text'][:180]}_")
+            return _discord_message(
+                f"No question found for message `{message_id}`. "
+                "Capture it with `/ask` first."
+            )
+        return _discord_message(
+            f"Marked as resolved in CockroachDB memory: _{question['question_text'][:180]}_"
+        )
 
     if name == "ask":
         question_text = str(options.get("question", "")).strip()
         if not is_likely_question(question_text) and len(question_text) < 8:
             return _discord_message("Please provide a clearer study question.")
         channel_id = str(body.get("channel_id", ""))
-        # Synthetic message id for slash-captured questions
         message_id = f"ask-{body.get('id')}"
         embedding = embed_text(question_text)
         with get_conn() as conn:
             course = get_active_course_for_guild(conn, guild_id)
             if not course:
-                return _discord_message("No active course for this server. Ingest a syllabus first.")
-            insert_question(
+                return _discord_message(
+                    "No active course for this server. Ingest a syllabus first."
+                )
+            row = insert_question(
                 conn,
                 course_id=course["id"],
                 channel_id=channel_id,
@@ -116,11 +133,33 @@ def _handle_command(body: dict[str, Any]) -> dict[str, Any]:
                 question_text=question_text,
                 embedding=embedding,
             )
-        return _discord_message("Captured your question for the weekly gap report.")
+            matches = link_question_to_topics(
+                conn,
+                course_id=course["id"],
+                question_id=row["id"],
+                embedding=embedding,
+                question_text=question_text,
+            )
+        topics = ", ".join(m["topic_name"] for m in matches) or "no close syllabus match yet"
+        return _discord_message(
+            f"Captured into StudyAI memory and linked to: **{topics}**"
+        )
 
     if name == "gap-report":
         result = build_and_post_gap_report(guild_id=guild_id)
         return _discord_message(result["message"])
+
+    if name == "memory":
+        with get_conn() as conn:
+            course = get_active_course_for_guild(conn, guild_id)
+            if not course:
+                return _discord_message("No active course memory for this server.")
+            digest = format_memory_digest(
+                conn,
+                course_id=course["id"],
+                course_name=course["course_name"],
+            )
+        return _discord_message(digest[:1900])
 
     return _discord_message(f"Unknown command: `{name}`")
 
@@ -138,9 +177,18 @@ def _handle_component(body: dict[str, Any]) -> dict[str, Any]:
                 responder_id=str(user.get("id", "")),
                 answer_text="Resolved via button",
             )
+            if question:
+                insert_agent_action(
+                    conn,
+                    course_id=question["course_id"],
+                    action_type="resolve",
+                    input_ref=str(question["id"]),
+                    output_summary="Resolved via button",
+                    payload={"message_id": message_id},
+                )
         if not question:
-            return _discord_message("Could not find that question.")
-        return _discord_message("Question marked resolved ✅")
+            return _discord_message("Could not find that question in memory.")
+        return _discord_message("Question marked resolved in CockroachDB ✅")
     return _discord_message("Unknown component.")
 
 
@@ -159,6 +207,15 @@ def _handle_reaction_payload(body: dict[str, Any]) -> dict[str, Any]:
             responder_id=user_id,
             answer_text="Resolved via ✅ reaction",
         )
+        if question:
+            insert_agent_action(
+                conn,
+                course_id=question["course_id"],
+                action_type="resolve",
+                input_ref=str(question["id"]),
+                output_summary="Resolved via reaction",
+                payload={"message_id": message_id, "user_id": user_id},
+            )
     if not question:
         return _response(404, {"error": "question_not_found"})
     return _response(200, {"ok": True, "question_id": str(question["id"])})

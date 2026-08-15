@@ -65,6 +65,16 @@ def main() -> int:
     with get_conn() as conn:
         course = ensure_course(conn, args.guild_id, args.course_name)
         count = bulk_insert_topics(conn, course["id"], prepared)
+        from shared.db import insert_agent_action
+
+        insert_agent_action(
+            conn,
+            course_id=course["id"],
+            action_type="syllabus_ingest",
+            input_ref=args.file,
+            output_summary=f"Ingested {count} syllabus topics for {args.course_name}",
+            payload={"topic_count": count, "course_name": args.course_name},
+        )
 
     print(f"Inserted {count} topics for course '{args.course_name}' ({course['id']})")
     return 0

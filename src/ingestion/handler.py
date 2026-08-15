@@ -1,4 +1,4 @@
-"""Ingestion Lambda: Discord messages → Bedrock embeddings → CockroachDB."""
+"""Ingestion Lambda: Discord messages → Bedrock embeddings → CockroachDB memory."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+from shared.agent import link_question_to_topics
 from shared.bedrock import embed_text, is_likely_question
 from shared.config import get_settings
 from shared.db import get_active_course_for_guild, get_conn, insert_question
@@ -70,8 +71,28 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 question_text=content,
                 embedding=embedding,
             )
-        logger.info("Ingested question %s for course %s", row["id"], course["id"])
-        return _response(200, {"ok": True, "question_id": str(row["id"])})
+            matches = link_question_to_topics(
+                conn,
+                course_id=course["id"],
+                question_id=row["id"],
+                embedding=embedding,
+                question_text=content,
+            )
+        topic_names = [m["topic_name"] for m in matches]
+        logger.info(
+            "Ingested question %s for course %s topics=%s",
+            row["id"],
+            course["id"],
+            topic_names,
+        )
+        return _response(
+            200,
+            {
+                "ok": True,
+                "question_id": str(row["id"]),
+                "linked_topics": topic_names,
+            },
+        )
     except Exception:
         logger.exception("Ingestion failed")
         return _response(500, {"error": "ingestion_failed"})
