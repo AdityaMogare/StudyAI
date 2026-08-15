@@ -1,188 +1,139 @@
 # StudyAI
 
-Discord bot system that passively captures student questions, maps them to syllabus topics with semantic search on **CockroachDB VECTOR**, tracks resolution, and posts a weekly **gap report** of collective class blind spots.
+**Classroom Memory Agent** for Discord: passively captures student questions, maps them to syllabus topics with **CockroachDB distributed VECTOR search**, tracks resolution, and acts by generating TA intervention plans from collective blind spots.
 
-Remote: [AdityaMogare/StudyAI](https://github.com/AdityaMogare/StudyAI)
+Remote: [AdityaMogare/StudyAI](https://github.com/AdityaMogare/StudyAI) · License: [MIT](LICENSE)
+
+Hackathon docs: [docs/HACKATHON.md](docs/HACKATHON.md) · [docs/SETUP_CHECKLIST.md](docs/SETUP_CHECKLIST.md) · [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md)
 
 ## Architecture
+
+![StudyAI architecture](docs/architecture.svg)
 
 ```
 Discord ──Gateway relay──► API Gateway ──► Ingestion Lambda ──► Bedrock (Titan embed)
                 │                                    │
                 │                                    ▼
-                │                             CockroachDB (VECTOR)
+                │                    CockroachDB (VECTOR + agent_actions)
                 │                                    ▲
 Slash cmds ─────┴──► Interactions Lambda ────────────┤
                                                      │
 EventBridge (Fri 5pm UTC) ──► Gap Report Lambda ─────┘
                                      │
                                      ▼
-                              Discord #exam-prep embed
+                    Discord #exam-prep embed + TA plan
 ```
 
 | Component | Trigger | Role |
 |-----------|---------|------|
-| **Ingestion Lambda** | `POST /ingestion` | Filter questions → Bedrock embedding → `questions` table |
-| **Resolution Lambda** | `POST /interactions` | `/resolved`, `/ask`, `/gap-report`, ✅ reactions |
-| **Gap Report Lambda** | EventBridge cron | Query `topic_coverage` → Discord rich embed |
+| **Ingestion Lambda** | `POST /ingestion` | Embed question → store → VECTOR-link topics → log `agent_actions` |
+| **Resolution Lambda** | `POST /interactions` | `/ask`, `/resolved`, `/gap-report`, `/memory`, ✅ reactions |
+| **Gap Report Lambda** | EventBridge cron | Coverage + Bedrock TA recommendations → Discord embed |
 | **Syllabus CLI** | Manual | Claude extracts topics → embeddings → `syllabus_topics` |
-| **Gateway relay** | Always-on (local/ECS) | Forwards `MESSAGE_CREATE` + reactions (Discord has no HTTP message webhooks) |
+| **Gateway relay** | Always-on (local/ECS) | Forwards `MESSAGE_CREATE` + reactions |
 
 ## Tech stack
 
 - **UX:** Discord (slash commands + passive channel capture)
 - **Compute:** AWS Lambda + API Gateway + EventBridge
-- **Database:** CockroachDB with [VECTOR / pgvector-compatible](https://www.cockroachlabs.com/docs/stable/vector) search
-- **AI:** Amazon Bedrock — Claude 3 (topic extraction), Titan Embed Text v1 (1536-d)
+- **Database:** CockroachDB [VECTOR / distributed indexing](https://www.cockroachlabs.com/docs/stable/vector)
+- **AI:** Amazon Bedrock — Claude 3 (extraction + TA plans), Titan Embed Text v1 (1536-d)
+- **Agent tooling:** CockroachDB Cloud [Managed MCP](https://cockroachlabs.cloud/mcp) + Agent Skills
 - **IaC:** AWS SAM (`template.yaml`)
 
 ## Database
 
-Apply the schema against your CockroachDB cluster:
-
 ```bash
 export DATABASE_URL='postgresql://user:pass@host:26257/studyai?sslmode=verify-full'
-cockroach sql --url "$DATABASE_URL" -f schema/001_init.sql
+make schema        # courses, topics, questions, answers, topic_coverage
+make schema-agent  # question_topic_links, agent_actions
 ```
 
-Or any PostgreSQL client:
+Tables: `courses`, `syllabus_topics`, `questions`, `answers`, `question_topic_links`, `agent_actions`  
+View: `topic_coverage` — semantic join when L2 distance `< 0.3`
 
-```bash
-psql "$DATABASE_URL" -f schema/001_init.sql
-```
-
-Tables: `courses`, `syllabus_topics`, `questions`, `answers`  
-View: `topic_coverage` — joins questions to topics when L2 distance `< 0.3`
-
-> VECTOR INDEX syntax needs CockroachDB **25.2+**. On 24.2–25.1, remove the `VECTOR INDEX (...)` lines from `schema/001_init.sql`; exact distance search still works.
+> VECTOR INDEX needs CockroachDB **25.2+**. On 24.2–25.1, remove `VECTOR INDEX (...)` lines from `schema/001_init.sql`.
 
 ## Quick start
 
-### 1. Configure
+Follow [docs/SETUP_CHECKLIST.md](docs/SETUP_CHECKLIST.md) for Discord / AWS / CockroachDB credentials.
 
 ```bash
-cp .env.example .env
-# Fill DATABASE_URL, Discord tokens, REPORT_CHANNEL_ID, etc.
+cp .env.example .env   # fill secrets — never commit .env
 python3 -m venv .venv && source .venv/bin/activate
 make install
-```
-
-### 2. Initialize schema + syllabus
-
-```bash
-make schema
+make schema && make schema-agent
 python tools/ingest_syllabus.py \
   --file samples/syllabus_cs101.txt \
   --guild-id "$DISCORD_GUILD_ID" \
   --course-name "CS 101"
-```
-
-Dry-run topic extraction only:
-
-```bash
-python tools/ingest_syllabus.py --file samples/syllabus_cs101.txt \
-  --guild-id "$DISCORD_GUILD_ID" --course-name "CS 101" --dry-run
-```
-
-### 3. Deploy Lambdas
-
-```bash
-sam build
-sam deploy --guided
-```
-
-Pass `DatabaseUrl`, Discord params, and channel IDs when prompted.  
-Outputs include:
-
-- **InteractionsUrl** → Discord Developer Portal → Interactions Endpoint URL  
-- **IngestionUrl** → set as `INGESTION_URL` for the gateway relay  
-
-Enable Bedrock model access for Titan Embeddings and Claude 3 in the AWS console (region must match).
-
-### 4. Register slash commands
-
-```bash
+sam build && sam deploy --guided
+# Set Discord Interactions Endpoint URL → Outputs.InteractionsUrl
 make register
-```
-
-Commands: `/ask`, `/resolved`, `/gap-report`
-
-### 5. Run the gateway relay (passive capture)
-
-```bash
-export INGESTION_URL='https://..../Prod/ingestion'
-export RESOLUTION_URL='https://..../Prod/interactions'
+export INGESTION_URL=... RESOLUTION_URL=...
 make gateway
+# optional repeatable demo data:
+make seed
 ```
 
-Enable **Message Content Intent** for the bot in the Discord Developer Portal.
+Slash commands: `/ask`, `/resolved`, `/gap-report`, `/memory`
 
 ## Core workflows
 
-### A. Question ingestion
+### A. Question ingestion (memory write + link)
 
-1. Student posts in `#questions` (or uses `/ask`)
-2. Relay / command → Ingestion Lambda
-3. Heuristic filter drops bot noise / non-questions
-4. Bedrock Titan embeds the text
-5. Row inserted into `questions` (`status = open`)
+1. Student posts in `#questions` or uses `/ask`
+2. Titan embeds the text → `questions` row
+3. VECTOR nearest-neighbor links syllabus topics → `question_topic_links`
+4. Action logged in `agent_actions` (`topic_link`)
 
 ### B. Resolution
 
-- Slash: `/resolved message_id:<id>`
-- Reaction: ✅ on the question message (via gateway)
-- Optional answer text stored in `answers`
+- `/resolved`, ✅ reaction, or resolve button
+- Updates `questions.status` and optionally `answers`
+- Logs `agent_actions` (`resolve`)
 
-### C. Weekly gap report
+### C. Act on memory
 
-EventBridge fires the Gap Report Lambda (default: Friday 17:00 UTC). It reads coverage, then posts an embed with:
-
-1. **Untouched topics** — `question_count = 0`
-2. **Unresolved areas** — high `open_count`
-
-Manual trigger: `/gap-report`
+- `/memory` — Bedrock reads coverage + recent questions → TA digest (persisted)
+- `/gap-report` or Friday cron — Discord embed with untouched topics, open clusters, and agent TA plan
 
 ### D. Syllabus ingestion
 
-`tools/ingest_syllabus.py` uses Claude to extract topics, Titan to embed them, and inserts into `syllabus_topics`.
+`tools/ingest_syllabus.py` extracts topics with Claude, embeds with Titan, writes `syllabus_topics`.
 
-## Local invoke (SAM)
+## Security & operations
 
-```bash
-sam local invoke IngestionFunction -e events/message_create.json
-```
+- **Secrets:** store `DATABASE_URL` and Discord tokens in SAM parameters / env — rotate bot tokens if leaked; never commit `.env`
+- **Discord:** Interactions Endpoint verified with Ed25519 (`DISCORD_PUBLIC_KEY`)
+- **IAM:** Lambda role limited to `bedrock:InvokeModel` (tighten resource ARNs for production)
+- **Observability:** CloudWatch logs from each Lambda; query `agent_actions` for an audit trail
+- **Resilience:** idempotent `message_id` upserts; gap-report still posts coverage if Bedrock recommendation fails
 
 ## Project layout
 
 ```
-schema/001_init.sql       # CockroachDB DDL + topic_coverage view
-src/
-  shared/                 # db, bedrock, discord, gap logic
-  ingestion/handler.py
-  resolution/handler.py
-  gap_report/handler.py
-tools/
-  ingest_syllabus.py
-  register_commands.py
-gateway/relay.py          # Discord gateway → Lambda forwarder
-template.yaml             # AWS SAM
-samples/syllabus_cs101.txt
+LICENSE
+schema/001_init.sql
+schema/002_agent_memory.sql
+src/shared/           # db, bedrock, agent, discord, gap logic
+src/ingestion/
+src/resolution/
+src/gap_report/
+tools/                # syllabus ingest, register commands, seed demo
+gateway/relay.py
+docs/                 # hackathon, MCP, video script, Devpost draft
+template.yaml
 ```
 
 ## Environment variables
 
-See [`.env.example`](.env.example). Important knobs:
+See [`.env.example`](.env.example).
 
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | CockroachDB connection string |
 | `SIMILARITY_THRESHOLD` | L2 distance cutoff (default `0.3`) |
-| `QUESTIONS_CHANNEL_IDS` | Channels to watch (comma-separated) |
-| `REPORT_CHANNEL_ID` | Where weekly embeds are posted |
-| `BEDROCK_EMBEDDING_MODEL` | Default `amazon.titan-embed-text-v1` (1536-d) |
-
-## Notes
-
-- Discord slash commands and the Interactions Endpoint are fully serverless. Passive message listening needs the small **gateway relay** (or any process that forwards `MESSAGE_CREATE` to `/ingestion`).
-- Tune `SIMILARITY_THRESHOLD` after embedding a sample syllabus; Titan L2 distances differ from cosine setups.
-- Multi-course: one active `courses` row per guild (latest active). Extend `get_active_course_for_guild` if you need channel→course mapping.
+| `QUESTIONS_CHANNEL_IDS` | Channels to watch |
+| `REPORT_CHANNEL_ID` | Gap-report destination |
+| `BEDROCK_EMBEDDING_MODEL` | Default `amazon.titan-embed-text-v1` |
