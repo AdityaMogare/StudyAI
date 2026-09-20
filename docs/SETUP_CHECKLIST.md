@@ -2,6 +2,8 @@
 
 Complete these before demo day. Do **not** commit real secrets.
 
+Prefer **local-first** ([LOCAL_DEV.md](LOCAL_DEV.md)) if SAM/Bedrock is not ready.
+
 ## 1. CockroachDB Cloud
 
 - [x] Create Serverless (or Dedicated) cluster
@@ -41,9 +43,28 @@ cp .env.example .env
 # fill all values — never commit .env
 # BEDROCK_EMBEDDING_MODEL=amazon.titan-embed-text-v1   # must be 1536-d
 # EMBEDDING_MODE=auto                                  # falls back to local vectors
+# or EMBEDDING_MODE=local for FastAPI demo without Titan
 ```
 
-## 5. Deploy + wire Discord
+## 5. Local-first (no AWS Lambda)
+
+```bash
+make install
+make schema && make schema-agent
+make seed-syllabus
+make smoke
+make local
+# other terminal: cloudflared tunnel --url http://127.0.0.1:8080
+# Discord Interactions URL = https://<tunnel>/interactions
+export INGESTION_URL=http://127.0.0.1:8080/ingestion
+export RESOLUTION_URL=http://127.0.0.1:8080/interactions
+make register
+make gateway
+make seed          # optional demo questions
+make gap-report    # optional CLI report
+```
+
+## 6. Deploy SAM + wire Discord (optional later)
 
 ```bash
 make install
@@ -62,7 +83,7 @@ make seed    # optional demo questions
 make smoke   # local ask/link/memory/resolve check
 ```
 
-## 6. Smoke test
+## 7. Smoke test
 
 - [ ] `make smoke` passes locally
 - [ ] `/ask How does binary search work?` → linked topics reply

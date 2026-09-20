@@ -1,8 +1,8 @@
-.PHONY: install schema schema-agent build deploy register gateway seed seed-syllabus smoke help
+.PHONY: install schema schema-agent build deploy register gateway seed seed-syllabus smoke local gap-report help
 
 help:
 	@echo "StudyAI targets:"
-	@echo "  make install        - install Python deps (Lambdas + gateway + tools)"
+	@echo "  make install        - install Python deps (Lambdas + gateway + local server)"
 	@echo "  make schema         - apply schema/001_init.sql (requires DATABASE_URL)"
 	@echo "  make schema-agent   - apply schema/002_agent_memory.sql"
 	@echo "  make build          - sam build"
@@ -13,10 +13,13 @@ help:
 	@echo "  make seed-syllabus  - offline CS 101 topic seed (no Bedrock chat)"
 	@echo "  make seed           - seed demo questions (syllabus must exist)"
 	@echo "  make smoke          - local ask/link/memory/resolve smoke test"
+	@echo "  make local          - FastAPI local runtime (no AWS Lambda)"
+	@echo "  make gap-report     - post gap report to Discord (no EventBridge)"
 
 install:
 	python3 -m pip install -r requirements.txt
 	python3 -m pip install -r gateway/requirements.txt
+	python3 -m pip install -r local_server/requirements.txt
 
 schema:
 	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL required" && exit 1)
@@ -57,3 +60,9 @@ seed:
 
 smoke:
 	python3 tools/smoke_test_local.py
+
+local:
+	python3 local_server/app.py
+
+gap-report:
+	python3 tools/run_gap_report.py
