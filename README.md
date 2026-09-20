@@ -56,6 +56,21 @@ View: `topic_coverage` — semantic join when L2 distance `< 0.3`
 
 ## Quick start (local-first — no AWS)
 
+### Local Discord (SQLite, no Cockroach)
+
+```bash
+cp .env.example .env   # set LOCAL_MODE=true + Discord bot/guild/channel IDs
+python3 -m venv .venv && source .venv/bin/activate
+make install
+make discord-local
+```
+
+Leave the Discord **Interactions Endpoint URL** blank. Slash commands: `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved`.
+
+`/ask` tries Bedrock for a live answer + interview follow-ups, then the static CS 101 pack. Set `CHAT_MODE=auto` (default) and `TUTOR_DAILY_CAP=20` in `.env`. `CHAT_MODE=off` is pack-only. Restart `make discord-local` after changing env. AWS credentials on this machine are required for live answers.
+
+### Local FastAPI + CockroachDB
+
 See [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) for the full path.
 
 ```bash
@@ -86,7 +101,7 @@ export INGESTION_URL=... RESOLUTION_URL=...
 make gateway
 ```
 
-Slash commands: `/ask`, `/resolved`, `/gap-report`, `/memory`
+Slash commands: `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/resolved`, `/gap-report`, `/memory`
 
 ## Core workflows
 

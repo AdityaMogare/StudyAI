@@ -1,4 +1,4 @@
-.PHONY: install schema schema-agent build deploy register gateway seed seed-syllabus smoke local gap-report help
+.PHONY: install schema schema-agent build deploy register gateway seed seed-syllabus smoke local gap-report discord-local discord-invite help
 
 help:
 	@echo "StudyAI targets:"
@@ -15,6 +15,8 @@ help:
 	@echo "  make smoke          - local ask/link/memory/resolve smoke test"
 	@echo "  make local          - FastAPI local runtime (no AWS Lambda)"
 	@echo "  make gap-report     - post gap report to Discord (no EventBridge)"
+	@echo "  make discord-local  - Discord bot on this machine (SQLite, no AWS/Cockroach)"
+	@echo "  make discord-invite - print OAuth URL to add the bot to your existing server"
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -66,3 +68,9 @@ local:
 
 gap-report:
 	python3 tools/run_gap_report.py
+
+discord-invite:
+	python3 tools/print_discord_invite.py
+
+discord-local:
+	LOCAL_MODE=true python3 gateway/local_bot.py

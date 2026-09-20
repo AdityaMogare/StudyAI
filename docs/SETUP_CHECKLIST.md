@@ -4,6 +4,30 @@ Complete these before demo day. Do **not** commit real secrets.
 
 Prefer **local-first** ([LOCAL_DEV.md](LOCAL_DEV.md)) if SAM/Bedrock is not ready.
 
+## 0. Local Discord only (no AWS, no Cockroach)
+
+Use this to try `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved` on your laptop.
+
+1. Discord app + bot in your server (Message Content Intent **on**).
+2. Leave **Interactions Endpoint URL empty** so slash commands go to the local process.
+3. In `.env`: `LOCAL_MODE=true`, bot token, application id, guild id, channel ids. Optional: `CHAT_MODE=auto` and `TUTOR_DAILY_CAP=20` for live `/ask` (needs AWS/Bedrock on this machine; otherwise the static CS 101 pack is used).
+4. Invite **this** app into the server (creating the Discord app does not add the bot):
+
+```bash
+make discord-invite
+# open the printed URL → pick the StudyAI server → Authorize
+```
+
+5. Then:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+make install
+make discord-local
+```
+
+The bot seeds CS 101 into `data/studyai.db` on first run. Optional: `LOCAL_MODE=true make smoke`.
+
 ## 1. CockroachDB Cloud
 
 - [x] Create Serverless (or Dedicated) cluster
