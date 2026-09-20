@@ -139,6 +139,8 @@ def invoke_chat(
 ) -> str:
     """Call Bedrock Converse (works for Mistral, Nova, Claude, Llama)."""
     settings = get_settings()
+    if settings.chat_mode == "off":
+        raise RuntimeError("CHAT_MODE=off")
     try:
         response = _client().converse(
             modelId=settings.bedrock_chat_model,
@@ -188,7 +190,7 @@ def _rule_based_recommendations(
         ),
         "exam_risk": risk,
         "rationale": (
-            f"Rule-based plan from CockroachDB coverage memory: "
+            f"Rule-based plan from classroom coverage memory: "
             f"{len(untouched)} untouched topics, {len(unresolved)} unresolved clusters."
         ),
     }
@@ -272,6 +274,10 @@ def _parse_json_object(text: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("Expected JSON object")
     return data
+
+
+def parse_json_object(text: str) -> dict[str, Any]:
+    return _parse_json_object(text)
 
 
 def _strip_fence(text: str) -> str:

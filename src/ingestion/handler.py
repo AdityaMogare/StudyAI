@@ -6,10 +6,9 @@ import json
 import logging
 from typing import Any
 
-from shared.agent import link_question_to_topics
-from shared.bedrock import embed_text, is_likely_question
+from shared.bedrock import is_likely_question
 from shared.config import get_settings
-from shared.db import get_active_course_for_guild, get_conn, insert_question
+from shared.features import capture_question
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -51,46 +50,33 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         return _response(400, {"error": "missing required fields"})
 
     try:
-        embedding = embed_text(content)
-        with get_conn() as conn:
-            course = get_active_course_for_guild(conn, guild_id)
-            if not course:
-                return _response(
-                    404,
-                    {
-                        "error": "no_active_course",
-                        "hint": "Run tools/ingest_syllabus.py to create a course",
-                    },
-                )
-            row = insert_question(
-                conn,
-                course_id=course["id"],
-                channel_id=channel_id,
-                message_id=message_id,
-                asker_id=asker_id,
-                question_text=content,
-                embedding=embedding,
+        result = capture_question(
+            guild_id=guild_id,
+            channel_id=channel_id,
+            message_id=message_id,
+            asker_id=asker_id,
+            question_text=content,
+        )
+        if not result.get("ok"):
+            status = 404 if result.get("error") == "no_active_course" else 500
+            return _response(
+                status,
+                {
+                    "error": result.get("error"),
+                    "hint": result.get("message"),
+                },
             )
-            matches = link_question_to_topics(
-                conn,
-                course_id=course["id"],
-                question_id=row["id"],
-                embedding=embedding,
-                question_text=content,
-            )
-        topic_names = [m["topic_name"] for m in matches]
         logger.info(
-            "Ingested question %s for course %s topics=%s",
-            row["id"],
-            course["id"],
-            topic_names,
+            "Ingested question %s topics=%s",
+            result.get("question_id"),
+            result.get("linked_topics"),
         )
         return _response(
             200,
             {
                 "ok": True,
-                "question_id": str(row["id"]),
-                "linked_topics": topic_names,
+                "question_id": result.get("question_id"),
+                "linked_topics": result.get("linked_topics"),
             },
         )
     except Exception:

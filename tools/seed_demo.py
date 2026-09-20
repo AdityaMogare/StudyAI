@@ -22,6 +22,7 @@ load_dotenv(ROOT / ".env")
 
 from shared.agent import link_question_to_topics  # noqa: E402
 from shared.bedrock import embed_text  # noqa: E402
+from shared.config import get_settings  # noqa: E402
 from shared.db import get_active_course_for_guild, get_conn, insert_question  # noqa: E402
 
 DEMO_QUESTIONS = [
@@ -43,8 +44,9 @@ def main() -> int:
     if not args.guild_id:
         print("guild-id / DISCORD_GUILD_ID required", file=sys.stderr)
         return 1
-    if not os.environ.get("DATABASE_URL"):
-        print("DATABASE_URL required", file=sys.stderr)
+    settings = get_settings()
+    if not settings.local_mode and not os.environ.get("DATABASE_URL"):
+        print("DATABASE_URL required (or set LOCAL_MODE=true)", file=sys.stderr)
         return 1
 
     with get_conn() as conn:

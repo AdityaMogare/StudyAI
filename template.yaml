@@ -37,6 +37,14 @@ Parameters:
     Type: String
     Default: auto
     Description: auto | bedrock | local (local = deterministic 1536-d demo embeddings)
+  ChatMode:
+    Type: String
+    Default: auto
+    Description: auto | bedrock | off (off = static CS 101 tutor pack only)
+  TutorDailyCap:
+    Type: String
+    Default: '20'
+    Description: Live /ask answers per Discord user per UTC day (0 = unlimited)
   SimilarityThreshold:
     Type: String
     Default: '0.3'
@@ -65,6 +73,8 @@ Globals:
         BEDROCK_EMBEDDING_MODEL: !Ref BedrockEmbeddingModel
         BEDROCK_CHAT_MODEL: !Ref BedrockChatModel
         EMBEDDING_MODE: !Ref EmbeddingMode
+        CHAT_MODE: !Ref ChatMode
+        TUTOR_DAILY_CAP: !Ref TutorDailyCap
         SIMILARITY_THRESHOLD: !Ref SimilarityThreshold
 
 Resources:

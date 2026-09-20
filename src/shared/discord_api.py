@@ -11,6 +11,31 @@ from nacl.signing import VerifyKey
 
 DISCORD_API = "https://discord.com/api/v10"
 
+# View Channel, Send Messages, Embed Links, Add Reactions,
+# Read Message History, Use Application Commands
+BOT_INVITE_PERMISSIONS = 2147564672
+
+
+def bot_invite_url(application_id: str, *, permissions: int = BOT_INVITE_PERMISSIONS) -> str:
+    return (
+        "https://discord.com/oauth2/authorize"
+        f"?client_id={application_id}"
+        f"&permissions={permissions}"
+        "&integration_type=0"
+        "&scope=bot%20applications.commands"
+    )
+
+
+def fetch_bot_guilds(bot_token: str) -> list[dict[str, Any]]:
+    response = requests.get(
+        f"{DISCORD_API}/users/@me/guilds",
+        headers={"Authorization": f"Bot {bot_token}"},
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data if isinstance(data, list) else []
+
 
 def verify_discord_signature(
     *,
@@ -80,7 +105,7 @@ def register_guild_commands(
         },
         {
             "name": "ask",
-            "description": "Capture a study question into StudyAI memory",
+            "description": "Ask a CS 101 question — get an explanation and practice follow-ups",
             "options": [
                 {
                     "name": "question",
@@ -92,11 +117,31 @@ def register_guild_commands(
         },
         {
             "name": "gap-report",
-            "description": "Post the syllabus gap report with TA recommendations",
+            "description": "Post this week's exam study plan to the report channel",
         },
         {
             "name": "memory",
-            "description": "Ask the Classroom Memory Agent for a live TA digest",
+            "description": "Course memory: explained vs still open vs never asked",
+        },
+        {
+            "name": "quiz",
+            "description": "5 exam-prep questions for a syllabus topic",
+            "options": [
+                {
+                    "name": "topic",
+                    "description": "e.g. Arrays, Recursion, Hash Tables",
+                    "type": 3,
+                    "required": False,
+                }
+            ],
+        },
+        {
+            "name": "weak-spots",
+            "description": "Topics you and the class have not covered",
+        },
+        {
+            "name": "plan",
+            "description": "This week's exam study plan from classroom memory",
         },
     ]
     response = requests.put(
@@ -132,12 +177,12 @@ def build_gap_report_embed(
     )
     fields: list[dict[str, Any]] = [
         {
-            "name": f"Untouched topics ({len(untouched)})",
+            "name": f"This week: not asked yet ({len(untouched)})",
             "value": untouched_lines[:1024],
             "inline": False,
         },
         {
-            "name": f"Unresolved areas ({len(unresolved)})",
+            "name": f"Still confusing / open ({len(unresolved)})",
             "value": unresolved_lines[:1024],
             "inline": False,
         },
@@ -145,26 +190,25 @@ def build_gap_report_embed(
     if recommendation:
         priority = recommendation.get("priority_topics") or []
         priority_lines = (
-            "\n".join(f"• {name}" for name in priority[:5]) or "_No priority topics._"
+            "\n".join(f"• {name} — `/quiz {name}`" for name in priority[:5])
+            or "_No priority topics._"
         )
         risk = recommendation.get("exam_risk", "unknown")
-        focus = str(recommendation.get("office_hours_focus") or "")[:500]
+        focus = str(recommendation.get("office_hours_focus") or "")[:400]
         fields.append(
             {
-                "name": f"Agent TA plan (exam risk: {risk})",
+                "name": f"Study plan (exam risk: {risk})",
                 "value": f"{priority_lines}\n\n{focus}"[:1024],
                 "inline": False,
             }
         )
     return {
-        "title": f"Weekly Gap Report · {course_name}",
+        "title": f"This week's exam plan · {course_name}",
         "description": (
-            "Classroom Memory Agent — CockroachDB VECTOR coverage plus Bedrock "
-            "recommendations for what TAs should teach next."
+            "StudyAI classroom memory — what the class has not asked, what is still open, "
+            "and what to drill before the exam. Students: `/quiz`, `/weak-spots`, `/plan`."
         ),
         "color": 0x1F6FEB,
         "fields": fields,
-        "footer": {
-            "text": "StudyAI · CockroachDB VECTOR memory + Amazon Bedrock"
-        },
+        "footer": {"text": "StudyAI · exam prep from classroom memory"},
     }

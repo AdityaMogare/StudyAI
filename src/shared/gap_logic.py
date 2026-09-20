@@ -73,8 +73,8 @@ def build_and_post_gap_report(
     return {
         "ok": True,
         "message": (
-            f"Posted gap report for **{course['course_name']}**: "
-            f"{len(untouched)} untouched, {len(unresolved)} unresolved areas"
+            f"Posted this week's study plan for **{course['course_name']}**: "
+            f"{len(untouched)} not-yet-asked, {len(unresolved)} still-open areas"
             + (
                 f", exam risk **{recommendation.get('exam_risk')}**."
                 if recommendation

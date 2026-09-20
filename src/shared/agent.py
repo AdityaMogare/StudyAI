@@ -6,8 +6,6 @@ import logging
 from typing import Any, Sequence
 from uuid import UUID
 
-import psycopg
-
 from shared.bedrock import recommend_ta_interventions
 from shared.config import get_settings
 from shared.db import (
@@ -22,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def link_question_to_topics(
-    conn: psycopg.Connection,
+    conn: Any,
     *,
     course_id: UUID | str,
     question_id: UUID | str,
@@ -38,6 +36,7 @@ def link_question_to_topics(
         embedding=embedding,
         limit=top_k,
         max_distance=settings.similarity_threshold * 2.5,
+        query_text=question_text,
     )
     links = [
         {
@@ -75,7 +74,7 @@ def link_question_to_topics(
 
 
 def generate_and_store_recommendations(
-    conn: psycopg.Connection,
+    conn: Any,
     *,
     course_id: UUID | str,
     course_name: str,
@@ -105,7 +104,7 @@ def generate_and_store_recommendations(
 
 
 def format_memory_digest(
-    conn: psycopg.Connection,
+    conn: Any,
     *,
     course_id: UUID | str,
     course_name: str,
@@ -134,7 +133,7 @@ def format_memory_digest(
         f"Topics tracked: {len(rows)} | Untouched: {len(untouched)} | Hot open clusters: {len(unresolved)}",
         f"Exam risk: **{recommendation.get('exam_risk', 'unknown')}**",
         "",
-        "**TA priority (from CockroachDB memory + Bedrock):**",
+        "**Study / TA priority:**",
     ]
     if priority:
         lines.extend(f"• {name}" for name in priority[:5])

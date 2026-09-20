@@ -25,7 +25,14 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
 from shared.bedrock import embed_text  # noqa: E402
-from shared.db import bulk_insert_topics, ensure_course, get_conn, insert_agent_action  # noqa: E402
+from shared.config import get_settings  # noqa: E402
+from shared.db import (  # noqa: E402
+    bulk_insert_topics,
+    clear_syllabus_topics,
+    ensure_course,
+    get_conn,
+    insert_agent_action,
+)
 
 # Exam-relevant topics derived from samples/syllabus_cs101.txt
 CS101_TOPICS: list[dict[str, str]] = [
@@ -91,8 +98,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not os.environ.get("DATABASE_URL"):
-        print("DATABASE_URL is required", file=sys.stderr)
+    settings = get_settings()
+    if not settings.local_mode and not os.environ.get("DATABASE_URL"):
+        print("DATABASE_URL is required (or set LOCAL_MODE=true)", file=sys.stderr)
         return 1
 
     print(f"Seeding {len(CS101_TOPICS)} offline topics for '{args.course_name}'...")
@@ -106,11 +114,7 @@ def main() -> int:
     with get_conn() as conn:
         course = ensure_course(conn, args.guild_id, args.course_name)
         if args.replace:
-            conn.execute(
-                "DELETE FROM syllabus_topics WHERE course_id = %s",
-                (str(course["id"]),),
-            )
-            conn.commit()
+            clear_syllabus_topics(conn, course["id"])
             print("Cleared existing topics for course.")
         count = bulk_insert_topics(conn, course["id"], prepared)
         insert_agent_action(

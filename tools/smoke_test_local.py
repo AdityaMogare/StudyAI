@@ -17,6 +17,7 @@ load_dotenv(ROOT / ".env")
 
 from shared.agent import format_memory_digest, link_question_to_topics  # noqa: E402
 from shared.bedrock import embed_text, recommend_ta_interventions  # noqa: E402
+from shared.config import get_settings  # noqa: E402
 from shared.db import (  # noqa: E402
     fetch_topic_coverage,
     get_active_course_for_guild,
@@ -25,6 +26,7 @@ from shared.db import (  # noqa: E402
     resolve_question_by_message_id,
 )
 from shared.gap_logic import classify_gaps  # noqa: E402
+from shared.tutor import capture_question, quiz_topic, weak_spots, weekly_plan  # noqa: E402
 
 
 def main() -> int:
@@ -33,8 +35,9 @@ def main() -> int:
     if not guild_id:
         print("DISCORD_GUILD_ID required", file=sys.stderr)
         return 1
-    if not os.environ.get("DATABASE_URL"):
-        print("DATABASE_URL required", file=sys.stderr)
+    settings = get_settings()
+    if not settings.local_mode and not os.environ.get("DATABASE_URL"):
+        print("DATABASE_URL required (or set LOCAL_MODE=true)", file=sys.stderr)
         return 1
 
     question_text = "How does binary search guarantee O(log n) time complexity?"
@@ -92,6 +95,22 @@ def main() -> int:
             answer_text="Binary search halves the search space each step.",
         )
         print(f"/resolved: status={resolved and resolved.get('status')}")
+
+    taught = capture_question(
+        guild_id=guild_id,
+        channel_id=channel_id,
+        message_id=f"tutor-smoke-{uuid.uuid4()}",
+        asker_id="smoke-tester",
+        question_text="What's the difference between a stack and a queue?",
+    )
+    print("--- /ask tutor ---")
+    print((taught.get("message") or "")[:500])
+    print("--- /quiz Hash ---")
+    print(quiz_topic(guild_id=guild_id, topic_query="Hash", asker_id="smoke-tester")["message"][:400])
+    print("--- /weak-spots ---")
+    print(weak_spots(guild_id=guild_id, asker_id="smoke-tester")["message"][:400])
+    print("--- /plan ---")
+    print(weekly_plan(guild_id=guild_id, asker_id="smoke-tester")["message"][:400])
 
     print("Smoke test OK")
     return 0
