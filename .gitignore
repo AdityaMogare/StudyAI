@@ -41,3 +41,4 @@ layer/
 *.log
 tmp/
 .cache/
+data/

@@ -12,6 +12,10 @@ def _split_csv(value: str | None) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -19,6 +23,10 @@ class Settings:
     bedrock_embedding_model: str
     bedrock_chat_model: str
     embedding_mode: str
+    chat_mode: str
+    tutor_daily_cap: int
+    local_mode: bool
+    sqlite_path: str
     discord_bot_token: str
     discord_public_key: str
     discord_application_id: str
@@ -29,8 +37,23 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        database_url = os.environ.get("DATABASE_URL", "").strip()
+        sqlite_path = os.environ.get("SQLITE_PATH", "data/studyai.db").strip() or "data/studyai.db"
+        local_mode = _truthy(os.environ.get("LOCAL_MODE")) or database_url.startswith("sqlite")
+        embedding_mode = os.environ.get("EMBEDDING_MODE", "auto").strip().lower()
+        if local_mode and embedding_mode == "auto":
+            embedding_mode = "local"
+        chat_mode = os.environ.get("CHAT_MODE", "auto").strip().lower()
+        if chat_mode not in {"auto", "bedrock", "off"}:
+            chat_mode = "auto"
+        try:
+            tutor_daily_cap = int(os.environ.get("TUTOR_DAILY_CAP", "20").strip() or "20")
+        except ValueError:
+            tutor_daily_cap = 20
+        if not local_mode and not database_url:
+            raise KeyError("DATABASE_URL is required unless LOCAL_MODE=true")
         return cls(
-            database_url=os.environ["DATABASE_URL"],
+            database_url=database_url,
             aws_region=os.environ.get("AWS_REGION", "us-east-1"),
             bedrock_embedding_model=os.environ.get(
                 "BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v1"
@@ -38,7 +61,11 @@ class Settings:
             bedrock_chat_model=os.environ.get(
                 "BEDROCK_CHAT_MODEL", "mistral.ministral-3-8b-instruct"
             ),
-            embedding_mode=os.environ.get("EMBEDDING_MODE", "auto").strip().lower(),
+            embedding_mode=embedding_mode,
+            chat_mode=chat_mode,
+            tutor_daily_cap=max(0, tutor_daily_cap),
+            local_mode=local_mode,
+            sqlite_path=sqlite_path,
             discord_bot_token=os.environ.get("DISCORD_BOT_TOKEN", ""),
             discord_public_key=os.environ.get("DISCORD_PUBLIC_KEY", ""),
             discord_application_id=os.environ.get("DISCORD_APPLICATION_ID", ""),
