@@ -4,7 +4,7 @@
 
 Remote: [AdityaMogare/StudyAI](https://github.com/AdityaMogare/StudyAI) · License: [MIT](LICENSE)
 
-Hackathon docs: [docs/HACKATHON.md](docs/HACKATHON.md) · [docs/SETUP_CHECKLIST.md](docs/SETUP_CHECKLIST.md) · [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md)
+Hackathon docs: [docs/HACKATHON.md](docs/HACKATHON.md) · [docs/SETUP_CHECKLIST.md](docs/SETUP_CHECKLIST.md) · [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) · [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md)
 
 ## Architecture
 
@@ -35,11 +35,11 @@ EventBridge (Fri 5pm UTC) ──► Gap Report Lambda ─────┘
 ## Tech stack
 
 - **UX:** Discord (slash commands + passive channel capture)
-- **Compute:** AWS Lambda + API Gateway + EventBridge
+- **Compute:** Local FastAPI runtime (dev) or AWS Lambda + API Gateway + EventBridge
 - **Database:** CockroachDB [VECTOR / distributed indexing](https://www.cockroachlabs.com/docs/stable/vector)
-- **AI:** Amazon Bedrock — Claude 3 (extraction + TA plans), Titan Embed Text v1 (1536-d)
+- **AI:** Amazon Bedrock when available; local 1536-d embeddings + rule-based TA plans for demos
 - **Agent tooling:** CockroachDB Cloud [Managed MCP](https://cockroachlabs.cloud/mcp) + Agent Skills
-- **IaC:** AWS SAM (`template.yaml`)
+- **IaC:** AWS SAM (`template.yaml`) — optional until you switch off local runtime
 
 ## Database
 
@@ -54,26 +54,36 @@ View: `topic_coverage` — semantic join when L2 distance `< 0.3`
 
 > VECTOR INDEX needs CockroachDB **25.2+**. On 24.2–25.1, remove `VECTOR INDEX (...)` lines from `schema/001_init.sql`.
 
-## Quick start
+## Quick start (local-first — no AWS)
+
+See [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) for the full path.
+
+```bash
+cp .env.example .env   # fill DATABASE_URL + Discord; EMBEDDING_MODE=local
+python3 -m venv .venv && source .venv/bin/activate
+make install
+make schema && make schema-agent
+make seed-syllabus
+make smoke
+make local
+# tunnel: cloudflared tunnel --url http://127.0.0.1:8080
+# Discord Interactions URL → https://<tunnel>/interactions
+export INGESTION_URL=http://127.0.0.1:8080/ingestion
+export RESOLUTION_URL=http://127.0.0.1:8080/interactions
+make register && make gateway
+```
+
+## Quick start (AWS SAM — optional later)
 
 Follow [docs/SETUP_CHECKLIST.md](docs/SETUP_CHECKLIST.md) for Discord / AWS / CockroachDB credentials.
 
 ```bash
-cp .env.example .env   # fill secrets — never commit .env
-python3 -m venv .venv && source .venv/bin/activate
-make install
-make schema && make schema-agent
-python tools/ingest_syllabus.py \
-  --file samples/syllabus_cs101.txt \
-  --guild-id "$DISCORD_GUILD_ID" \
-  --course-name "CS 101"
+# after local data works:
 sam build && sam deploy --guided
 # Set Discord Interactions Endpoint URL → Outputs.InteractionsUrl
 make register
 export INGESTION_URL=... RESOLUTION_URL=...
 make gateway
-# optional repeatable demo data:
-make seed
 ```
 
 Slash commands: `/ask`, `/resolved`, `/gap-report`, `/memory`
