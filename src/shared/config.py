@@ -18,6 +18,7 @@ class Settings:
     aws_region: str
     bedrock_embedding_model: str
     bedrock_chat_model: str
+    embedding_mode: str
     discord_bot_token: str
     discord_public_key: str
     discord_application_id: str
@@ -35,8 +36,9 @@ class Settings:
                 "BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v1"
             ),
             bedrock_chat_model=os.environ.get(
-                "BEDROCK_CHAT_MODEL", "anthropic.claude-3-haiku-20240307-v1:0"
+                "BEDROCK_CHAT_MODEL", "mistral.ministral-3-8b-instruct"
             ),
+            embedding_mode=os.environ.get("EMBEDDING_MODE", "auto").strip().lower(),
             discord_bot_token=os.environ.get("DISCORD_BOT_TOKEN", ""),
             discord_public_key=os.environ.get("DISCORD_PUBLIC_KEY", ""),
             discord_application_id=os.environ.get("DISCORD_APPLICATION_ID", ""),
@@ -55,3 +57,9 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings.from_env()
     return _settings
+
+
+def reset_settings() -> None:
+    """Clear cached settings (useful after env changes in long-lived processes)."""
+    global _settings
+    _settings = None

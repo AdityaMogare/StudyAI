@@ -1,17 +1,23 @@
-"""Amazon Bedrock helpers for embeddings, Claude extraction, and agent reasoning."""
+"""Amazon Bedrock helpers for embeddings, chat extraction, and agent reasoning."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import math
 import re
+import struct
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
 
 from shared.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+EMBEDDING_DIM = 1536
 
 
 def _client():
@@ -19,21 +25,57 @@ def _client():
     return boto3.client("bedrock-runtime", region_name=settings.aws_region)
 
 
+def local_embed_text(text: str, *, dim: int = EMBEDDING_DIM) -> list[float]:
+    """Deterministic 1536-d embedding for demos when Bedrock is unavailable.
+
+    Same text always yields the same vector so VECTOR nearest-neighbor still works
+    within a locally-embedded corpus. Quality is lower than Titan.
+    """
+    digest = hashlib.sha256(text.strip().encode("utf-8")).digest()
+    values: list[float] = []
+    counter = 0
+    while len(values) < dim:
+        block = hashlib.sha256(digest + counter.to_bytes(4, "big")).digest()
+        for i in range(0, len(block) - 3, 4):
+            raw = struct.unpack_from(">I", block, i)[0]
+            values.append((raw / 0xFFFFFFFF) * 2.0 - 1.0)
+            if len(values) >= dim:
+                break
+        counter += 1
+    norm = math.sqrt(sum(v * v for v in values)) or 1.0
+    return [v / norm for v in values]
+
+
 def embed_text(text: str) -> list[float]:
-    """Generate a 1536-d embedding via Amazon Titan Embed Text v1."""
+    """Generate a 1536-d embedding via Titan, with optional local fallback."""
     settings = get_settings()
-    body = json.dumps({"inputText": text})
-    response = _client().invoke_model(
-        modelId=settings.bedrock_embedding_model,
-        contentType="application/json",
-        accept="application/json",
-        body=body,
-    )
-    payload = json.loads(response["body"].read())
-    embedding = payload.get("embedding")
-    if not embedding:
-        raise RuntimeError(f"No embedding in Bedrock response: {payload.keys()}")
-    return embedding
+    mode = settings.embedding_mode
+    if mode == "local":
+        return local_embed_text(text)
+
+    try:
+        body = json.dumps({"inputText": text})
+        response = _client().invoke_model(
+            modelId=settings.bedrock_embedding_model,
+            contentType="application/json",
+            accept="application/json",
+            body=body,
+        )
+        payload = json.loads(response["body"].read())
+        embedding = payload.get("embedding")
+        if not embedding:
+            raise RuntimeError(f"No embedding in Bedrock response: {payload.keys()}")
+        if len(embedding) != EMBEDDING_DIM:
+            raise RuntimeError(
+                f"Expected {EMBEDDING_DIM}-d embedding for schema, got {len(embedding)}. "
+                "Use amazon.titan-embed-text-v1 (or change VECTOR size)."
+            )
+        return embedding
+    except Exception as exc:
+        if mode == "bedrock":
+            raise
+        logger.warning("Bedrock embedding failed (%s); using local fallback", exc)
+        return local_embed_text(text)
 
 
 def is_likely_question(text: str) -> bool:
@@ -73,7 +115,7 @@ def is_likely_question(text: str) -> bool:
 
 
 def extract_topics_from_syllabus(syllabus_text: str) -> list[dict[str, str]]:
-    """Use Claude on Bedrock to extract distinct syllabus topics as JSON."""
+    """Use Bedrock chat to extract distinct syllabus topics as JSON."""
     prompt = f"""Extract distinct exam-relevant topics from this course syllabus.
 
 Return ONLY a JSON array. Each item must have:
@@ -82,11 +124,40 @@ Return ONLY a JSON array. Each item must have:
 
 Syllabus:
 ---
-{syllabus_text[:20000]}
+{syllabus_text[:12000]}
 ---
 """
-    text = invoke_claude(prompt, max_tokens=4096, temperature=0.2)
+    text = invoke_chat(prompt, max_tokens=2048, temperature=0.2)
     return _parse_json_array(text)
+
+
+def invoke_chat(
+    prompt: str,
+    *,
+    max_tokens: int = 2048,
+    temperature: float = 0.2,
+) -> str:
+    """Call Bedrock Converse (works for Mistral, Nova, Claude, Llama)."""
+    settings = get_settings()
+    try:
+        response = _client().converse(
+            modelId=settings.bedrock_chat_model,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={
+                "maxTokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        msg = exc.response.get("Error", {}).get("Message", str(exc))
+        if code == "ThrottlingException":
+            raise RuntimeError(
+                f"Bedrock quota hit for {settings.bedrock_chat_model}: {msg}. "
+                "Use offline syllabus seed or wait for tokens/day reset."
+            ) from exc
+        raise
+    return _converse_text(response)
 
 
 def invoke_claude(
@@ -95,21 +166,32 @@ def invoke_claude(
     max_tokens: int = 2048,
     temperature: float = 0.2,
 ) -> str:
-    settings = get_settings()
-    body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    response = _client().invoke_model(
-        modelId=settings.bedrock_chat_model,
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(body),
+    """Backward-compatible alias for invoke_chat."""
+    return invoke_chat(prompt, max_tokens=max_tokens, temperature=temperature)
+
+
+def _rule_based_recommendations(
+    untouched: list[dict[str, Any]],
+    unresolved: list[dict[str, Any]],
+) -> dict[str, Any]:
+    untouched_names = [r["topic_name"] for r in untouched[:20]]
+    unresolved_names = [r["topic_name"] for r in unresolved[:20]]
+    priority = (untouched_names[:3] + unresolved_names[:3])[:5]
+    risk = "high" if len(untouched) >= 3 or len(unresolved) >= 2 else (
+        "medium" if untouched or unresolved else "low"
     )
-    payload = json.loads(response["body"].read())
-    return _claude_text(payload)
+    return {
+        "priority_topics": priority,
+        "office_hours_focus": (
+            "Cover untouched syllabus topics first, then open question clusters "
+            "with the highest open counts."
+        ),
+        "exam_risk": risk,
+        "rationale": (
+            f"Rule-based plan from CockroachDB coverage memory: "
+            f"{len(untouched)} untouched topics, {len(unresolved)} unresolved clusters."
+        ),
+    }
 
 
 def recommend_ta_interventions(
@@ -119,7 +201,7 @@ def recommend_ta_interventions(
     unresolved: list[dict[str, Any]],
     recent_questions: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Claude acts on coverage memory: prioritize what TAs should teach next."""
+    """Chat model acts on coverage memory; falls back to rule-based plan on failure."""
     untouched_names = [r["topic_name"] for r in untouched[:20]]
     unresolved_lines = [
         f"{r['topic_name']} (open={r['open_count']}, total={r['question_count']})"
@@ -147,23 +229,19 @@ Return ONLY JSON with:
   "rationale": "2-3 sentences citing the memory signals"
 }}
 """
-    text = invoke_claude(prompt, max_tokens=1024, temperature=0.3)
     try:
+        text = invoke_chat(prompt, max_tokens=1024, temperature=0.3)
         return _parse_json_object(text)
-    except ValueError:
-        logger.warning("Failed to parse TA recommendation JSON; using fallback")
-        return {
-            "priority_topics": untouched_names[:3] or [r["topic_name"] for r in unresolved[:3]],
-            "office_hours_focus": "Review untouched and high-open topics from the gap report.",
-            "exam_risk": "medium" if (untouched or unresolved) else "low",
-            "rationale": text[:500],
-        }
+    except Exception as exc:
+        logger.warning("TA recommendation via Bedrock failed (%s); using rule-based plan", exc)
+        return _rule_based_recommendations(untouched, unresolved)
 
 
-def _claude_text(payload: dict[str, Any]) -> str:
-    content = payload.get("content") or []
-    parts = [block.get("text", "") for block in content if block.get("type") == "text"]
-    return "\n".join(parts).strip()
+def _converse_text(payload: dict[str, Any]) -> str:
+    content = payload.get("output", {}).get("message", {}).get("content") or []
+    return "\n".join(
+        block.get("text", "") for block in content if isinstance(block, dict) and block.get("text")
+    ).strip()
 
 
 def _parse_json_array(text: str) -> list[dict[str, str]]:
@@ -171,7 +249,7 @@ def _parse_json_array(text: str) -> list[dict[str, str]]:
     start = cleaned.find("[")
     end = cleaned.rfind("]")
     if start == -1 or end == -1:
-        raise ValueError(f"Claude did not return a JSON array: {text[:400]}")
+        raise ValueError(f"Chat model did not return a JSON array: {text[:400]}")
     data = json.loads(cleaned[start : end + 1])
     topics: list[dict[str, str]] = []
     for item in data:
@@ -180,7 +258,7 @@ def _parse_json_array(text: str) -> list[dict[str, str]]:
         if name:
             topics.append({"topic_name": name, "description": desc})
     if not topics:
-        raise ValueError("No topics parsed from Claude response")
+        raise ValueError("No topics parsed from chat model response")
     return topics
 
 
@@ -189,7 +267,7 @@ def _parse_json_object(text: str) -> dict[str, Any]:
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start == -1 or end == -1:
-        raise ValueError(f"Claude did not return a JSON object: {text[:400]}")
+        raise ValueError(f"Chat model did not return a JSON object: {text[:400]}")
     data = json.loads(cleaned[start : end + 1])
     if not isinstance(data, dict):
         raise ValueError("Expected JSON object")

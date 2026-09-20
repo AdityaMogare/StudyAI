@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Syllabus ingestion CLI — parse syllabus → Claude topics → Titan embeddings → CockroachDB.
+"""Syllabus ingestion CLI — parse syllabus → Nova topics → Titan embeddings → CockroachDB.
 
 Usage:
   export DATABASE_URL=...
@@ -46,7 +46,7 @@ def main() -> int:
         return 1
 
     text = Path(args.file).read_text(encoding="utf-8")
-    print(f"Extracting topics from {args.file} via Bedrock Claude...")
+    print(f"Extracting topics from {args.file} via Amazon Nova...")
     topics = extract_topics_from_syllabus(text)
     print(f"Found {len(topics)} topics:")
     for t in topics:
