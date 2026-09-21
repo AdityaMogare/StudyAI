@@ -67,7 +67,7 @@ make discord-local
 
 Leave the Discord **Interactions Endpoint URL** blank. Slash commands: `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved`.
 
-`/ask` tries Bedrock for a live answer + interview follow-ups, then the static CS 101 pack. Set `CHAT_MODE=auto` (default) and `TUTOR_DAILY_CAP=20` in `.env`. `CHAT_MODE=off` is pack-only. Restart `make discord-local` after changing env. AWS credentials on this machine are required for live answers.
+`/ask` tries **OpenAI** (`gpt-4o-mini`) when `OPENAI_API_KEY` is set, then **Bedrock**, then the static CS 101 pack. Set `CHAT_PROVIDER=auto` (default) and `TUTOR_DAILY_CAP=20`. `CHAT_PROVIDER=off` is pack-only. Restart `make discord-local` after changing env.
 
 ### Local FastAPI + CockroachDB
 

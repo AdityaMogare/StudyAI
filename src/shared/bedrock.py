@@ -137,10 +137,20 @@ def invoke_chat(
     max_tokens: int = 2048,
     temperature: float = 0.2,
 ) -> str:
-    """Call Bedrock Converse (works for Mistral, Nova, Claude, Llama)."""
+    """Dispatch via CHAT_PROVIDER (OpenAI, Bedrock, or off)."""
+    from shared.chat import invoke_chat as dispatch
+
+    return dispatch(prompt, max_tokens=max_tokens, temperature=temperature)
+
+
+def converse_chat(
+    prompt: str,
+    *,
+    max_tokens: int = 2048,
+    temperature: float = 0.2,
+) -> str:
+    """Call Bedrock Converse (Mistral, Nova, Claude, Llama)."""
     settings = get_settings()
-    if settings.chat_mode == "off":
-        raise RuntimeError("CHAT_MODE=off")
     try:
         response = _client().converse(
             modelId=settings.bedrock_chat_model,

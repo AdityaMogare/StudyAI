@@ -40,7 +40,14 @@ Parameters:
   ChatMode:
     Type: String
     Default: auto
-    Description: auto | bedrock | off (off = static CS 101 tutor pack only)
+    Description: auto | openai | bedrock | off
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+  OpenAiChatModel:
+    Type: String
+    Default: gpt-4o-mini
   TutorDailyCap:
     Type: String
     Default: '20'
@@ -74,6 +81,9 @@ Globals:
         BEDROCK_CHAT_MODEL: !Ref BedrockChatModel
         EMBEDDING_MODE: !Ref EmbeddingMode
         CHAT_MODE: !Ref ChatMode
+        CHAT_PROVIDER: !Ref ChatMode
+        OPENAI_API_KEY: !Ref OpenAiApiKey
+        OPENAI_CHAT_MODEL: !Ref OpenAiChatModel
         TUTOR_DAILY_CAP: !Ref TutorDailyCap
         SIMILARITY_THRESHOLD: !Ref SimilarityThreshold
 
