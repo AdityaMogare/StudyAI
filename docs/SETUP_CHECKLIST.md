@@ -10,7 +10,7 @@ Use this to try `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report
 
 1. Discord app + bot in your server (Message Content Intent **on**).
 2. Leave **Interactions Endpoint URL empty** so slash commands go to the local process.
-3. In `.env`: `LOCAL_MODE=true`, bot token, application id, guild id, channel ids. Optional: `CHAT_MODE=auto` and `TUTOR_DAILY_CAP=20` for live `/ask` (needs AWS/Bedrock on this machine; otherwise the static CS 101 pack is used).
+3. In `.env`: `LOCAL_MODE=true`, bot token, application id, guild id, channel ids. Optional: `CHAT_PROVIDER=auto`, `OPENAI_API_KEY`, and `TUTOR_DAILY_CAP=20` for live `/ask` (OpenAI first, Bedrock fallback, then the static CS 101 pack).
 4. Invite **this** app into the server (creating the Discord app does not add the bot):
 
 ```bash

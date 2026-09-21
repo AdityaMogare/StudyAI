@@ -60,7 +60,7 @@ def _static_pack(topic_name: str | None) -> dict[str, Any]:
 
 def _live_tutor(*, question_text: str, topic_name: str | None) -> dict[str, Any] | None:
     settings = get_settings()
-    if settings.chat_mode == "off":
+    if settings.chat_provider == "off":
         return None
     pack = curriculum_for(topic_name) or {}
     notes = str(pack.get("explanation") or "")

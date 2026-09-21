@@ -23,7 +23,10 @@ class Settings:
     bedrock_embedding_model: str
     bedrock_chat_model: str
     embedding_mode: str
+    chat_provider: str
     chat_mode: str
+    openai_api_key: str
+    openai_chat_model: str
     tutor_daily_cap: int
     local_mode: bool
     sqlite_path: str
@@ -43,9 +46,11 @@ class Settings:
         embedding_mode = os.environ.get("EMBEDDING_MODE", "auto").strip().lower()
         if local_mode and embedding_mode == "auto":
             embedding_mode = "local"
-        chat_mode = os.environ.get("CHAT_MODE", "auto").strip().lower()
-        if chat_mode not in {"auto", "bedrock", "off"}:
-            chat_mode = "auto"
+        chat_provider = (
+            os.environ.get("CHAT_PROVIDER") or os.environ.get("CHAT_MODE") or "auto"
+        ).strip().lower()
+        if chat_provider not in {"auto", "openai", "bedrock", "off"}:
+            chat_provider = "auto"
         try:
             tutor_daily_cap = int(os.environ.get("TUTOR_DAILY_CAP", "20").strip() or "20")
         except ValueError:
@@ -62,7 +67,13 @@ class Settings:
                 "BEDROCK_CHAT_MODEL", "mistral.ministral-3-8b-instruct"
             ),
             embedding_mode=embedding_mode,
-            chat_mode=chat_mode,
+            chat_provider=chat_provider,
+            chat_mode=chat_provider,
+            openai_api_key=os.environ.get("OPENAI_API_KEY", "").strip(),
+            openai_chat_model=os.environ.get(
+                "OPENAI_CHAT_MODEL", "gpt-4o-mini"
+            ).strip()
+            or "gpt-4o-mini",
             tutor_daily_cap=max(0, tutor_daily_cap),
             local_mode=local_mode,
             sqlite_path=sqlite_path,

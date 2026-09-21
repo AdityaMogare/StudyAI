@@ -39,7 +39,9 @@ sam deploy \
     BedrockEmbeddingModel="${BEDROCK_EMBEDDING_MODEL:-amazon.titan-embed-text-v1}" \
     BedrockChatModel="${BEDROCK_CHAT_MODEL:-mistral.ministral-3-8b-instruct}" \
     EmbeddingMode="${EMBEDDING_MODE:-auto}" \
-    ChatMode="${CHAT_MODE:-auto}" \
+    ChatMode="${CHAT_PROVIDER:-${CHAT_MODE:-auto}}" \
+    OpenAiApiKey="${OPENAI_API_KEY:-}" \
+    OpenAiChatModel="${OPENAI_CHAT_MODEL:-gpt-4o-mini}" \
     TutorDailyCap="${TUTOR_DAILY_CAP:-20}" \
     SimilarityThreshold="${SIMILARITY_THRESHOLD:-0.3}" \
     WeeklyReportSchedule="${WEEKLY_REPORT_CRON:-cron(0 17 ? * FRI *)}"
