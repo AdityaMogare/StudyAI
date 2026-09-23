@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import os
 import logging
 
@@ -57,8 +58,22 @@ class StudyAIRelay(discord.Client):
             "content": message.content,
         }
         try:
-            resp = requests.post(INGESTION_URL, json=payload, timeout=20)
+            resp = requests.post(INGESTION_URL, json=payload, timeout=45)
             logger.info("Ingest %s → %s %s", message.id, resp.status_code, resp.text[:200])
+            data = {}
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {}
+            inner = data
+            raw_body = data.get("body") if isinstance(data, dict) else None
+            if isinstance(raw_body, str):
+                try:
+                    inner = json.loads(raw_body)
+                except json.JSONDecodeError:
+                    inner = data
+            if isinstance(inner, dict) and inner.get("drill") and inner.get("message"):
+                await message.reply(inner["message"], mention_author=False)
         except requests.RequestException:
             logger.exception("Failed to forward message %s", message.id)
 

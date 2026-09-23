@@ -65,9 +65,11 @@ make install
 make discord-local
 ```
 
-Leave the Discord **Interactions Endpoint URL** blank. Slash commands: `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved`.
+Leave the Discord **Interactions Endpoint URL** blank. Slash commands: `/ask`, `/quiz`, `/drill`, `/interview-ready`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved`.
 
 `/ask` tries **OpenAI** (`gpt-4o-mini`) when `OPENAI_API_KEY` is set, then **Bedrock**, then the static CS 101 pack. Set `CHAT_PROVIDER=auto` (default) and `TUTOR_DAILY_CAP=20`. `CHAT_PROVIDER=off` is pack-only. Restart `make discord-local` after changing env.
+
+Interview prep is personal, not classroom memory: `/drill` asks one question and waits for your next message; `/interview-ready` shows topics you have never drilled or keep failing.
 
 ### Local FastAPI + CockroachDB
 
@@ -101,7 +103,7 @@ export INGESTION_URL=... RESOLUTION_URL=...
 make gateway
 ```
 
-Slash commands: `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/resolved`, `/gap-report`, `/memory`
+Slash commands: `/ask`, `/quiz`, `/drill`, `/interview-ready`, `/weak-spots`, `/plan`, `/resolved`, `/gap-report`, `/memory`
 
 ## Core workflows
 

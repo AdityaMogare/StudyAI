@@ -12,6 +12,7 @@ from shared.tutor import (  # noqa: F401
     weak_spots,
     weekly_plan,
 )
+from shared.interview import interview_ready, start_drill, submit_drill_attempt  # noqa: F401
 
 
 def mark_resolved(

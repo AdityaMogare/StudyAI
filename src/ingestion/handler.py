@@ -8,7 +8,7 @@ from typing import Any
 
 from shared.bedrock import is_likely_question
 from shared.config import get_settings
-from shared.features import capture_question
+from shared.features import capture_question, submit_drill_attempt
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -40,12 +40,24 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         return _response(200, {"skipped": "channel_not_watched"})
 
     content = (body.get("content") or "").strip()
-    if not is_likely_question(content):
-        return _response(200, {"skipped": "not_a_question"})
-
     guild_id = str(body.get("guild_id") or settings.discord_guild_id)
     message_id = str(body.get("message_id", ""))
     asker_id = str(body.get("author_id", ""))
+
+    if content and guild_id and asker_id:
+        drill = submit_drill_attempt(
+            guild_id=guild_id,
+            asker_id=asker_id,
+            attempt_text=content,
+        )
+        if drill.get("handled"):
+            return _response(
+                200,
+                {"ok": True, "drill": True, "message": drill.get("message")},
+            )
+
+    if not is_likely_question(content):
+        return _response(200, {"skipped": "not_a_question"})
     if not all([guild_id, channel_id, message_id, asker_id, content]):
         return _response(400, {"error": "missing required fields"})
 
