@@ -9,7 +9,16 @@ from typing import Any
 from shared.bedrock import is_likely_question
 from shared.config import get_settings
 from shared.discord_api import verify_discord_signature
-from shared.features import capture_question, mark_resolved, memory_digest, quiz_topic, weak_spots, weekly_plan
+from shared.features import (  # noqa: E402
+    capture_question,
+    interview_ready,
+    mark_resolved,
+    memory_digest,
+    quiz_topic,
+    start_drill,
+    weak_spots,
+    weekly_plan,
+)
 from shared.gap_logic import build_and_post_gap_report
 
 logger = logging.getLogger()
@@ -124,6 +133,18 @@ def _handle_command(body: dict[str, Any]) -> dict[str, Any]:
 
     if name == "plan":
         result = weekly_plan(guild_id=guild_id, asker_id=user_id)
+        return _discord_message(result["message"])
+
+    if name == "drill":
+        result = start_drill(
+            guild_id=guild_id,
+            asker_id=user_id,
+            topic_query=str(options.get("topic") or "") or None,
+        )
+        return _discord_message(result["message"])
+
+    if name == "interview-ready":
+        result = interview_ready(guild_id=guild_id, asker_id=user_id)
         return _discord_message(result["message"])
 
     return _discord_message(f"Unknown command: `{name}`")

@@ -33,6 +33,7 @@ from shared.config import get_settings, reset_settings  # noqa: E402
 from shared.db import (  # noqa: E402
     bulk_insert_topics,
     ensure_course,
+    fetch_syllabus_topics,
     get_active_course_for_guild,
     get_conn,
     insert_agent_action,
@@ -40,9 +41,12 @@ from shared.db import (  # noqa: E402
 from shared.discord_api import bot_invite_url, fetch_bot_guilds  # noqa: E402
 from shared.features import (  # noqa: E402
     capture_question,
+    interview_ready,
     mark_resolved,
     memory_digest,
     quiz_topic,
+    start_drill,
+    submit_drill_attempt,
     weak_spots,
     weekly_plan,
 )
@@ -75,6 +79,33 @@ def _seed_cs101_if_needed(guild_id: str) -> None:
             payload={"topic_count": count, "mode": "local"},
         )
         logger.info("Seeded %s CS 101 topics into SQLite", count)
+
+
+def _ensure_interview_topics(guild_id: str) -> None:
+    extras = [t for t in CS101_TOPICS if t["topic_name"] == "System Design"]
+    with get_conn() as conn:
+        course = get_active_course_for_guild(conn, guild_id)
+        if not course:
+            return
+        have = {t["topic_name"] for t in fetch_syllabus_topics(conn, course["id"])}
+        prepared = []
+        for topic in extras:
+            if topic["topic_name"] in have:
+                continue
+            blob = f"{topic['topic_name']}\n{topic['description']}".strip()
+            prepared.append((topic["topic_name"], topic["description"], embed_text(blob)))
+        if not prepared:
+            return
+        count = bulk_insert_topics(conn, course["id"], prepared)
+        insert_agent_action(
+            conn,
+            course_id=course["id"],
+            action_type="syllabus_ingest",
+            input_ref="gateway/local_bot.py",
+            output_summary=f"Added {count} interview topics",
+            payload={"topic_count": count, "mode": "interview"},
+        )
+        logger.info("Added %s interview topics", count)
 
 
 class StudyAILocalBot(discord.Client):
@@ -134,11 +165,21 @@ class StudyAILocalBot(discord.Client):
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
             return
+        content = (message.content or "").strip()
+        if not content:
+            return
+        drill = submit_drill_attempt(
+            guild_id=str(message.guild.id),
+            asker_id=str(message.author.id),
+            attempt_text=content,
+        )
+        if drill.get("handled"):
+            await message.reply(drill["message"], mention_author=False)
+            return
         settings = get_settings()
         channel_ids = set(settings.questions_channel_ids)
         if channel_ids and str(message.channel.id) not in channel_ids:
             return
-        content = (message.content or "").strip()
         if not is_likely_question(content):
             return
         result = capture_question(
@@ -269,6 +310,32 @@ def _register_commands(bot: StudyAILocalBot) -> None:
         )
         await interaction.followup.send(result["message"])
 
+    @bot.tree.command(
+        name="drill",
+        description="One interview question — reply in chat with your attempt",
+    )
+    @app_commands.describe(topic="e.g. Arrays, Graphs, System Design")
+    async def drill_cmd(interaction: discord.Interaction, topic: str | None = None) -> None:
+        await interaction.response.defer()
+        result = start_drill(
+            guild_id=str(interaction.guild_id or ""),
+            asker_id=str(interaction.user.id),
+            topic_query=topic,
+        )
+        await interaction.followup.send(result["message"])
+
+    @bot.tree.command(
+        name="interview-ready",
+        description="Personal coverage: undrilled and failing topics vs passing",
+    )
+    async def interview_ready_cmd(interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+        result = interview_ready(
+            guild_id=str(interaction.guild_id or ""),
+            asker_id=str(interaction.user.id),
+        )
+        await interaction.followup.send(result["message"])
+
 
 def main() -> None:
     reset_settings()
@@ -281,6 +348,7 @@ def main() -> None:
         raise SystemExit("DISCORD_GUILD_ID is required")
 
     _seed_cs101_if_needed(settings.discord_guild_id)
+    _ensure_interview_topics(settings.discord_guild_id)
     bot = StudyAILocalBot()
     _register_commands(bot)
     logger.info("Starting local Discord bot. Leave Interactions Endpoint URL blank in the Discord portal.")

@@ -6,7 +6,7 @@ Prefer **local-first** ([LOCAL_DEV.md](LOCAL_DEV.md)) if SAM/Bedrock is not read
 
 ## 0. Local Discord only (no AWS, no Cockroach)
 
-Use this to try `/ask`, `/quiz`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved` on your laptop.
+Use this to try `/ask`, `/quiz`, `/drill`, `/interview-ready`, `/weak-spots`, `/plan`, `/memory`, `/gap-report`, `/resolved` on your laptop.
 
 1. Discord app + bot in your server (Message Content Intent **on**).
 2. Leave **Interactions Endpoint URL empty** so slash commands go to the local process.
@@ -34,7 +34,7 @@ The bot seeds CS 101 into `data/studyai.db` on first run. Optional: `LOCAL_MODE=
 - [x] Create database `studyai`
 - [x] Copy SQL connection string → `DATABASE_URL` in `.env`
 - [x] Enable / confirm VECTOR support (24.2+; VECTOR INDEX 25.2+)
-- [ ] Connect Cursor MCP ([MCP_SETUP.md](MCP_SETUP.md)) and authenticate
+- [ ] Connect CockroachDB Cloud MCP ([MCP_SETUP.md](MCP_SETUP.md)) and authenticate
 - [x] Apply schema:
 
 ```bash
@@ -114,4 +114,5 @@ make smoke   # local ask/link/memory/resolve check
 - [ ] MCP/SQL: row in `questions` + `question_topic_links` + `agent_actions`
 - [ ] `/memory` → TA digest
 - [ ] `/gap-report` → embed in report channel (rule-based if Bedrock chat fails)
-- [ ] ✅ reaction or `/resolved` → status `resolved`
+- [ ] `/drill Graphs` → one question; reply in chat → pass/fail feedback
+- [ ] `/interview-ready` lists Graphs only after a drill, and undrilled topics as not ready

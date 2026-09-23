@@ -84,6 +84,10 @@ CS101_TOPICS: list[dict[str, str]] = [
         "topic_name": "Graphs BFS and DFS",
         "description": "Adjacency list/matrix representations and BFS/DFS traversal.",
     },
+    {
+        "topic_name": "System Design",
+        "description": "Requirements, estimation, APIs, storage, cache, and scaling tradeoffs in interviews.",
+    },
 ]
 
 

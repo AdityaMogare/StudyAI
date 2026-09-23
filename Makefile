@@ -38,6 +38,11 @@ schema-agent:
 	else \
 		psql "$$DATABASE_URL" -f schema/002_agent_memory.sql; \
 	fi
+	@if command -v cockroach >/dev/null 2>&1; then \
+		cockroach sql --url "$$DATABASE_URL" -f schema/003_interview.sql; \
+	else \
+		psql "$$DATABASE_URL" -f schema/003_interview.sql; \
+	fi
 
 build:
 	sam build

@@ -143,6 +143,22 @@ def register_guild_commands(
             "name": "plan",
             "description": "This week's exam study plan from classroom memory",
         },
+        {
+            "name": "drill",
+            "description": "One interview question — reply in chat with your attempt",
+            "options": [
+                {
+                    "name": "topic",
+                    "description": "e.g. Arrays, Graphs, System Design",
+                    "type": 3,
+                    "required": False,
+                }
+            ],
+        },
+        {
+            "name": "interview-ready",
+            "description": "Personal coverage: undrilled and failing topics vs passing",
+        },
     ]
     response = requests.put(
         f"{DISCORD_API}/applications/{application_id}/guilds/{guild_id}/commands",

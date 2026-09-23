@@ -72,6 +72,29 @@ CREATE TABLE IF NOT EXISTS agent_actions (
     payload TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS drill_pending (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    asker_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES syllabus_topics(id) ON DELETE CASCADE,
+    topic_name TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    hint TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (course_id, asker_id)
+);
+CREATE TABLE IF NOT EXISTS drill_attempts (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    asker_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES syllabus_topics(id) ON DELETE CASCADE,
+    topic_name TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    attempt_text TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    feedback TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -646,3 +669,166 @@ def count_live_tutor_answers_today(
     if row is None:
         return 0
     return int(row["n"])
+
+
+def get_drill_pending(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, course_id, asker_id, topic_id, topic_name, question_text, hint, created_at
+        FROM drill_pending
+        WHERE course_id = %s AND asker_id = %s
+        """,
+        (str(course_id), asker_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_drill_pending(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+    topic_id: UUID | str,
+    topic_name: str,
+    question_text: str,
+    hint: str = "",
+) -> dict[str, Any]:
+    conn.execute(
+        "DELETE FROM drill_pending WHERE course_id = %s AND asker_id = %s",
+        (str(course_id), asker_id),
+    )
+    pending_id = _new_id()
+    created = _now()
+    conn.execute(
+        """
+        INSERT INTO drill_pending (
+            id, course_id, asker_id, topic_id, topic_name, question_text, hint, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            pending_id,
+            str(course_id),
+            asker_id,
+            str(topic_id),
+            topic_name,
+            question_text,
+            hint,
+            created,
+        ),
+    )
+    conn.commit()
+    return {
+        "id": pending_id,
+        "topic_id": str(topic_id),
+        "topic_name": topic_name,
+        "question_text": question_text,
+        "hint": hint,
+    }
+
+
+def clear_drill_pending(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+) -> None:
+    conn.execute(
+        "DELETE FROM drill_pending WHERE course_id = %s AND asker_id = %s",
+        (str(course_id), asker_id),
+    )
+    conn.commit()
+
+
+def insert_drill_attempt(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+    topic_id: UUID | str,
+    topic_name: str,
+    question_text: str,
+    attempt_text: str,
+    passed: bool,
+    feedback: str,
+) -> dict[str, Any]:
+    attempt_id = _new_id()
+    created = _now()
+    conn.execute(
+        """
+        INSERT INTO drill_attempts (
+            id, course_id, asker_id, topic_id, topic_name,
+            question_text, attempt_text, passed, feedback, created_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            attempt_id,
+            str(course_id),
+            asker_id,
+            str(topic_id),
+            topic_name,
+            question_text,
+            attempt_text,
+            1 if passed else 0,
+            feedback,
+            created,
+        ),
+    )
+    conn.commit()
+    return {"id": attempt_id, "passed": passed, "created_at": created}
+
+
+def fetch_drill_stats(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            topic_id,
+            topic_name,
+            COUNT(*) AS attempts,
+            SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) AS passes,
+            SUM(CASE WHEN passed = 0 THEN 1 ELSE 0 END) AS fails
+        FROM drill_attempts
+        WHERE course_id = %s AND asker_id = %s
+        GROUP BY topic_id, topic_name
+        """,
+        (str(course_id), asker_id),
+    ).fetchall()
+    results = []
+    for row in rows:
+        item = dict(row)
+        for key in ("attempts", "passes", "fails"):
+            item[key] = int(item.get(key) or 0)
+        results.append(item)
+    return results
+
+
+def fetch_recent_drill_questions(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    asker_id: str,
+    topic_id: UUID | str,
+    limit: int = 8,
+) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT question_text
+        FROM drill_attempts
+        WHERE course_id = %s AND asker_id = %s AND topic_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (str(course_id), asker_id, str(topic_id), limit),
+    ).fetchall()
+    return [r["question_text"] for r in rows]
