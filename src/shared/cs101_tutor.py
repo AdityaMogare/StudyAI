@@ -237,6 +237,25 @@ CURRICULUM: dict[str, dict[str, Any]] = {
             {"q": "Connected component: BFS or DFS?", "hint": "Either — both explore a component."},
         ],
     },
+    "System Design": {
+        "explanation": (
+            "In a **system design** interview, start with requirements (functional + scale), "
+            "estimate QPS/storage, sketch API + data model, then pick storage, cache, and "
+            "how you shard or replicate. Call out bottlenecks and what you would measure. "
+            "Do not jump to Kubernetes before the data flow is clear."
+        ),
+        "followups": [
+            "Design a URL shortener: API, data model, and how you handle 100M new links/day.",
+            "Where would you put a cache in a read-heavy news feed, and what do you invalidate?",
+        ],
+        "quiz": [
+            {"q": "Walk through designing a URL shortener. What is the data model and how do you generate short codes?", "hint": "hash or counter + base62; store long URL; cache hot keys."},
+            {"q": "A read-heavy API is slow. Name two design moves before you rewrite the app.", "hint": "cache, CDN, read replicas, pagination."},
+            {"q": "What numbers do you estimate first in a system design interview?", "hint": "QPS, payload size, storage, latency SLO."},
+            {"q": "SQL vs NoSQL — when do you pick each for a new service?", "hint": "SQL for relations/transactions; NoSQL for huge simple key lookup or flexible docs."},
+            {"q": "How do you keep a session store highly available?", "hint": "replication, sticky sessions vs shared Redis, failover."},
+        ],
+    },
 }
 
 
