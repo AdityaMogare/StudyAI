@@ -309,6 +309,75 @@ def fetch_nearest_topics(
     return results
 
 
+def fetch_similar_questions(
+    conn: Conn,
+    *,
+    course_id: UUID | str,
+    embedding: Sequence[float],
+    query_text: str,
+    exclude_question_id: UUID | str,
+    limit: int = 3,
+    max_distance: float | None = None,
+) -> list[dict[str, Any]]:
+    """Nearest prior questions in the course, with latest answer when present."""
+    if _local(conn):
+        return local_store.fetch_similar_questions(
+            conn,  # type: ignore[arg-type]
+            course_id=course_id,
+            embedding=embedding,
+            query_text=query_text,
+            exclude_question_id=exclude_question_id,
+            limit=limit,
+            max_distance=max_distance,
+        )
+    sql = """
+        SELECT
+            q.id AS question_id,
+            q.question_text,
+            q.status,
+            (q.embedding <-> %s::vector) AS distance,
+            (
+                SELECT a.answer_text
+                FROM answers a
+                WHERE a.question_id = q.id
+                ORDER BY a.created_at DESC
+                LIMIT 1
+            ) AS answer_text
+        FROM questions q
+        WHERE q.course_id = %s
+          AND q.id <> %s
+          AND q.embedding IS NOT NULL
+        ORDER BY q.embedding <-> %s::vector
+        LIMIT %s
+    """
+    vec = _vector_literal(embedding)
+    fetch_limit = max(limit * 4, limit)
+    rows = conn.execute(
+        sql,
+        (vec, str(course_id), str(exclude_question_id), vec, fetch_limit),
+    ).fetchall()
+    results = [dict(r) for r in rows]
+    if max_distance is not None:
+        results = [r for r in results if float(r["distance"]) <= max_distance]
+    return _unique_similar_texts(results, limit)
+
+
+def _unique_similar_texts(
+    rows: list[dict[str, Any]], limit: int
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        key = " ".join(str(row.get("question_text") or "").lower().split())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def replace_question_topic_links(
     conn: Conn,
     *,

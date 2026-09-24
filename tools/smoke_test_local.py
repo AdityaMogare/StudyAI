@@ -96,6 +96,31 @@ def main() -> int:
         )
         print(f"/resolved: status={resolved and resolved.get('status')}")
 
+    similar_ask = capture_question(
+        guild_id=guild_id,
+        channel_id=channel_id,
+        message_id=f"similar-smoke-{uuid.uuid4()}",
+        asker_id="smoke-tester",
+        question_text="Why is binary search O(log n)?",
+    )
+    similar_msg = similar_ask.get("message") or ""
+    print("--- /ask similar ---")
+    print(similar_msg[:900])
+    hits = similar_ask.get("similar_questions") or []
+    print(f"similar hits: {len(hits)}")
+    for hit in hits:
+        print(
+            f"  d={float(hit['distance']):.3f} "
+            f"{str(hit.get('question_text') or '')[:80]}"
+        )
+    lowered = similar_msg.lower()
+    if "already in course memory" not in lowered:
+        print("expected 'Already in course memory' in /ask reply", file=sys.stderr)
+        return 1
+    if "binary search" not in lowered:
+        print("expected prior binary-search question in similar block", file=sys.stderr)
+        return 1
+
     taught = capture_question(
         guild_id=guild_id,
         channel_id=channel_id,

@@ -161,6 +161,17 @@ def lexical_distance(left: str, right: str) -> float:
     return 1.0 - max(jaccard, containment)
 
 
+def question_overlap_distance(left: str, right: str) -> float:
+    """Paraphrase-friendly distance: containment of the shorter token set counts."""
+    a, b = tokenize(left), tokenize(right)
+    if not a or not b:
+        return 1.0
+    inter = len(a & b)
+    jaccard = inter / len(a | b)
+    contain = inter / min(len(a), len(b))
+    return 1.0 - max(jaccard, contain)
+
+
 def l2(left: Sequence[float], right: Sequence[float]) -> float:
     n = min(len(left), len(right))
     if n == 0:
@@ -413,6 +424,60 @@ def fetch_nearest_topics(
         scored.append(topic)
     scored.sort(key=lambda r: float(r["distance"]))
     return scored[:limit]
+
+
+def fetch_similar_questions(
+    conn: LocalConnection,
+    *,
+    course_id: UUID | str,
+    embedding: Sequence[float],
+    query_text: str,
+    exclude_question_id: UUID | str,
+    limit: int = 3,
+    max_distance: float | None = None,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id AS question_id, question_text, status, embedding
+        FROM questions
+        WHERE course_id = %s AND id <> %s AND embedding IS NOT NULL
+        """,
+        (str(course_id), str(exclude_question_id)),
+    ).fetchall()
+    query_vec = list(embedding)
+    scored: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        lex = question_overlap_distance(query_text, str(item.get("question_text") or ""))
+        vec_dist = l2(query_vec, _parse_vec(item.get("embedding")))
+        distance = min(lex, vec_dist)
+        del item["embedding"]
+        if max_distance is not None and distance > max_distance:
+            continue
+        item["distance"] = distance
+        answer = conn.execute(
+            """
+            SELECT answer_text FROM answers
+            WHERE question_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (str(item["question_id"]),),
+        ).fetchone()
+        item["answer_text"] = answer["answer_text"] if answer else None
+        scored.append(item)
+    scored.sort(key=lambda r: float(r["distance"]))
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in scored:
+        key = " ".join(str(item.get("question_text") or "").lower().split())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+        if len(unique) >= limit:
+            break
+    return unique
 
 
 def fetch_topic_coverage(

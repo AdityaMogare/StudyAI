@@ -13,6 +13,7 @@ from shared.cs101_tutor import curriculum_for, match_topic_name
 from shared.db import (
     count_live_tutor_answers_today,
     fetch_learner_coverage,
+    fetch_similar_questions,
     fetch_syllabus_topics,
     fetch_topic_question_texts,
     get_active_course_for_guild,
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 TUTOR_RESPONDER_ID = "studyai-tutor"
 DISCORD_LIMIT = 1900
+SIMILAR_REUSE_DISTANCE = 0.12
 
 
 def _clean_question(text: str) -> str:
@@ -179,6 +181,21 @@ def _format_tutor_message(
     return clip("\n".join(lines))
 
 
+def _format_similar_memory(matches: list[dict[str, Any]]) -> str:
+    if not matches:
+        return ""
+    lines = ["", "**Already in course memory**"]
+    for match in matches[:3]:
+        text = _clean_question(str(match.get("question_text") or ""))[:180]
+        status = str(match.get("status") or "open")
+        lines.append(f"• {text} — {status}")
+        answer = str(match.get("answer_text") or "").strip()
+        if answer:
+            snippet = answer.replace("\n", " ").strip()[:220]
+            lines.append(f"  {snippet}")
+    return "\n".join(lines)
+
+
 def capture_question(
     *,
     guild_id: str,
@@ -205,6 +222,16 @@ def capture_question(
             question_text=question_text,
             embedding=embedding,
         )
+        settings = get_settings()
+        similar = fetch_similar_questions(
+            conn,
+            course_id=course["id"],
+            embedding=embedding,
+            query_text=question_text,
+            exclude_question_id=row["id"],
+            limit=3,
+            max_distance=settings.similar_question_threshold,
+        )
         matches = link_question_to_topics(
             conn,
             course_id=course["id"],
@@ -213,14 +240,61 @@ def capture_question(
             question_text=question_text,
         )
         topic_name = matches[0]["topic_name"] if matches else None
-        live_used = count_live_tutor_answers_today(
-            conn, course_id=course["id"], asker_id=asker_id
+        closest = similar[0] if similar else None
+        reuse_answer = (
+            closest
+            and str(closest.get("answer_text") or "").strip()
+            and float(closest["distance"]) < SIMILAR_REUSE_DISTANCE
         )
-        taught = build_explanation(
-            question_text=question_text,
-            topic_name=topic_name,
-            live_used_today=live_used,
-        )
+        if reuse_answer:
+            pack = _static_pack(topic_name)
+            reused = str(closest["answer_text"]).strip()
+            taught = {
+                "topic_name": topic_name,
+                "explanation": reused,
+                "followups": pack["followups"],
+                "source": "memory",
+                "message": _format_tutor_message(
+                    question_text,
+                    topic_name,
+                    reused,
+                    pack["followups"],
+                    footer="_Reused from a similar question in course memory._",
+                ),
+            }
+        else:
+            live_used = count_live_tutor_answers_today(
+                conn, course_id=course["id"], asker_id=asker_id
+            )
+            taught = build_explanation(
+                question_text=question_text,
+                topic_name=topic_name,
+                live_used_today=live_used,
+            )
+        similar_block = _format_similar_memory(similar)
+        if similar_block:
+            room = max(200, DISCORD_LIMIT - len(similar_block) - 1)
+            taught["message"] = clip(taught["message"], room) + "\n" + similar_block
+            insert_agent_action(
+                conn,
+                course_id=course["id"],
+                action_type="similar_question",
+                input_ref=str(row["id"]),
+                output_summary=(
+                    f"Matched {len(similar)} similar question(s); "
+                    f"closest d={float(similar[0]['distance']):.3f}"
+                ),
+                payload={
+                    "matches": [
+                        {
+                            "question_id": str(m["question_id"]),
+                            "distance": float(m["distance"]),
+                            "status": m.get("status"),
+                        }
+                        for m in similar
+                    ]
+                },
+            )
         insert_answer(
             conn,
             question_id=row["id"],
@@ -248,6 +322,7 @@ def capture_question(
         "linked_topics": topics,
         "topic_name": topic_name,
         "followups": taught["followups"],
+        "similar_questions": similar,
         "message": taught["message"],
     }
 

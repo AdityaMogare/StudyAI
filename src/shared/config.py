@@ -37,6 +37,7 @@ class Settings:
     questions_channel_ids: list[str]
     report_channel_id: str
     similarity_threshold: float
+    similar_question_threshold: float
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -84,6 +85,9 @@ class Settings:
             questions_channel_ids=_split_csv(os.environ.get("QUESTIONS_CHANNEL_IDS")),
             report_channel_id=os.environ.get("REPORT_CHANNEL_ID", ""),
             similarity_threshold=float(os.environ.get("SIMILARITY_THRESHOLD", "0.3")),
+            similar_question_threshold=float(
+                os.environ.get("SIMILAR_QUESTION_THRESHOLD", "0.22")
+            ),
         )
 
 
